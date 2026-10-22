@@ -1,0 +1,34 @@
+# ==== 凭据：严禁入库 ====
+*.env
+*.key
+*.pem
+conn.json
+**/conn.json
+各类网址账号.txt
+操作纪要网址账号.docx
+
+# ==== 大体积二进制 ====
+*.exe
+*.zip
+*.7z
+*.rar
+*.msi
+*.dll
+*.lnk
+
+# ==== 工具 / 程序目录 ====
+Resources/
+Resources(*).zip
+重要od1/
+_medusa_updates_*/
+
+# ==== 系统噪声 ====
+~$*
+*.log
+*.tmp
+*.bak
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
