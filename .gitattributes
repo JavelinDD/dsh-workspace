@@ -1,0 +1,13 @@
+# 统一换行符：仓库内全部使用 LF，避免跨机器整文件 diff
+* text=auto eol=lf
+
+# Office / 图片等二进制文件，不做文本转换与合并
+*.docx  binary
+*.xlsx  binary
+*.pptx  binary
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
