@@ -48,7 +48,7 @@
     return setState(seed);
   }
 
-  /** 优先读取 localStorage，没有则用种子数据 */
+  /** 优先读取 localStorage，没有则用种子数据；种子版本变化时以新数据为准 */
   function load(seed) {
     var st = storage();
     if (st) {
@@ -57,7 +57,12 @@
         if (raw) {
           var parsed = JSON.parse(raw);
           if (parsed && Array.isArray(parsed.pokemons)) {
-            return setState(parsed);
+            var seedVersion = seed && seed.meta && seed.meta.version;
+            var storedVersion = parsed.meta && parsed.meta.version;
+            // 版本一致（或种子没标版本）才沿用本地数据，否则用新种子覆盖
+            if (!seedVersion || !storedVersion || storedVersion === seedVersion) {
+              return setState(parsed);
+            }
           }
         }
       } catch (e) {
