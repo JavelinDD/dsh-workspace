@@ -13,7 +13,10 @@
     <div class="search-wrap">
       <input id="search" type="search" placeholder="搜索宝可梦名称 / 别名 / 招式 / 特性，例如：胡帕" autocomplete="off">
     </div>
-    <div class="actions" id="actions"></div>
+    <div class="actions">
+      <button class="btn primary" id="btn-import-open">一键导入</button>
+      <button class="btn" id="btn-add">新增</button>
+    </div>
   </header>
 
   <div class="filterbar">
@@ -27,6 +30,106 @@
     <aside class="list-pane" id="list"></aside>
     <section class="detail-pane" id="detail"></section>
   </main>
+
+  <!-- 录入 / 编辑 -->
+  <div class="modal" id="modal-form">
+    <div class="modal-panel">
+      <div class="modal-head">
+        <h3 id="form-title">新增宝可梦</h3>
+        <button type="button" class="modal-close" data-close>×</button>
+      </div>
+      <div class="modal-body" id="form-body">
+        <section class="fgroup first">
+          <h4>基础信息</h4>
+          <div class="grid2">
+            <label>名称 *<input id="f-name" placeholder="例如：胡帕" maxlength="20"></label>
+            <label>形态<input id="f-form" placeholder="普通形态"></label>
+            <label>别名（逗号分隔）<input id="f-aliases" placeholder="Hoopa, 幻之宝可梦"></label>
+            <label>图鉴编号<input id="f-dex" type="number" min="1" placeholder="可空"></label>
+          </div>
+          <div class="sub-label">属性（可多选，最多 2 个）</div>
+          <div id="f-types" class="chips"></div>
+        </section>
+
+        <section class="fgroup">
+          <h4>特性</h4>
+          <div id="rows-abilities" class="rows"></div>
+          <button type="button" class="btn tiny" data-add="ability">+ 添加特性</button>
+        </section>
+
+        <section class="fgroup">
+          <h4>被动</h4>
+          <div id="rows-passives" class="rows"></div>
+          <button type="button" class="btn tiny" data-add="passive">+ 添加被动</button>
+        </section>
+
+        <section class="fgroup">
+          <h4>推荐性格</h4>
+          <div id="rows-natures" class="rows"></div>
+          <button type="button" class="btn tiny" data-add="nature">+ 添加性格</button>
+        </section>
+
+        <section class="fgroup">
+          <h4>推荐招式 <span class="hint" id="move-count"></span></h4>
+          <div id="rows-moves" class="rows"></div>
+          <button type="button" class="btn tiny" data-add="move">+ 添加招式</button>
+        </section>
+
+        <section class="fgroup">
+          <h4>出现区域与稀有度</h4>
+          <div id="rows-regions" class="rows"></div>
+          <button type="button" class="btn tiny" data-add="region">+ 添加区域</button>
+        </section>
+
+        <section class="fgroup">
+          <h4>进化与备注</h4>
+          <div class="grid2">
+            <label>进化前（名称（条件））<input id="f-prev" placeholder="例如：力壮鸡（等级16）"></label>
+            <label>进化后（名称（条件））<input id="f-next" placeholder="例如：火焰鸡（等级36）"></label>
+            <label>属性变化<input id="f-typechange" placeholder="例如：火 → 火/格斗"></label>
+            <label>数据来源<input id="f-source" placeholder="例如：模板导入"></label>
+          </div>
+          <label class="block">备注<textarea id="f-notes" rows="2" placeholder="补充说明"></textarea></label>
+        </section>
+
+        <div id="form-errors" class="form-errors"></div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn danger" id="btn-delete">删除</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" data-close>取消</button>
+        <button type="button" class="btn primary" id="btn-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 一键导入 -->
+  <div class="modal" id="modal-import">
+    <div class="modal-panel wide">
+      <div class="modal-head">
+        <h3>一键导入（模板文本）</h3>
+        <button type="button" class="modal-close" data-close>×</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint">
+          格式：<code>名称 + 特性 + 被动 + 性格 + 推荐招式</code>，随后用
+          <code>特性：</code> <code>被动：</code> <code>出现区域：</code> <code>稀有度：</code>
+          <code>性格推荐：</code> <code>推荐招式：</code> 标注，招式以「招式名：」开头、以「。」分隔。
+        </p>
+        <textarea id="import-text" rows="8" placeholder="把模板文本粘贴到这里…"></textarea>
+        <div class="row-actions">
+          <button type="button" class="btn tiny" id="btn-sample">填入示例</button>
+          <button type="button" class="btn" id="btn-preview">解析预览</button>
+        </div>
+        <div id="import-result"></div>
+      </div>
+      <div class="modal-foot">
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" data-close>取消</button>
+        <button type="button" class="btn primary" id="btn-do-import" disabled>确认导入</button>
+      </div>
+    </div>
+  </div>
 
   <div class="toast" id="toast"></div>
 
