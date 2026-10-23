@@ -133,8 +133,8 @@
       return;
     }
     el.list.innerHTML = list.map(function (p) {
-      var top = store.topRarity(p);
-      var rarityText = top ? cfg.RARITIES[top - 1] : '';
+      var rank = store.minRarity(p);
+      var rarityText = rank ? cfg.RARITIES[rank - 1] : '';
       return '<div class="card' + (p.id === state.currentId ? ' active' : '') + '" data-id="' + esc(p.id) + '">'
         + '<div class="card-top"><span class="card-name">' + esc(p.name) + '</span>'
         + '<span class="card-form">' + esc(p.formName || '') + '</span></div>'

@@ -97,6 +97,21 @@
     return best;
   }
 
+  /**
+   * 记录徽章用的稀有度：取所有区域中的「最低档」
+   * （口径：某只最高出现在普通，则它就不算稀有；徽章展示它最容易被遇到时的稀有度）
+   */
+  function minRarity(p) {
+    var cfg = (typeof window !== 'undefined' ? window : globalThis).POKEDEX_CONFIG;
+    var low = 0;
+    (p.regions || []).forEach(function (r) {
+      var rank = cfg ? cfg.rarityRank(r.rarity) : 0;
+      if (!rank) { return; }
+      if (!low || rank < low) { low = rank; }
+    });
+    return low;
+  }
+
   function query(opts) {
     opts = opts || {};
     var q = (opts.q || '').trim().toLowerCase();
@@ -131,8 +146,8 @@
         var bn = b.name.toLowerCase() === q ? 1 : 0;
         if (an !== bn) { return bn - an; }
       }
-      var ra = topRarity(a);
-      var rb = topRarity(b);
+      var ra = minRarity(a);
+      var rb = minRarity(b);
       if (ra !== rb) { return rb - ra; }
       return a.name.localeCompare(b.name, 'zh-Hans-CN');
     });
@@ -241,6 +256,7 @@
     exportJson: exportJson,
     importJson: importJson,
     clearStorage: clearStorage,
-    topRarity: topRarity
+    topRarity: topRarity,
+    minRarity: minRarity
   };
 });

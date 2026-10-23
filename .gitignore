@@ -32,3 +32,6 @@ desktop.ini
 .DS_Store
 .vscode/
 .idea/
+
+# ==== 抓取缓存 ====
+.cache/

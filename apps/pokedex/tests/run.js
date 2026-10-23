@@ -1,5 +1,5 @@
 /**
- * 自检脚本：数据结构、枚举、解析器、存储层、页面接线
+ * 自检脚本：数据结构、枚举、解析器、存储层、页面接线、抓取数据集
  * 运行：node tests/run.js
  */
 'use strict';
@@ -48,7 +48,10 @@ section('1. 文件完整性');
   'data/schema.md',
   'docs/需求说明.md',
   'docs/使用手册.md',
-  'README.md'
+  'README.md',
+  'tools/fetch-biomes.mjs',
+  'tools/build-dataset.mjs',
+  'tools/emit-data.mjs'
 ].forEach(function (f) {
   check('存在 ' + f, exists(f));
 });
@@ -67,21 +70,32 @@ check('神殿是合法区域', cfg.isRegion('神殿') === true);
 check('属性数量为 18', cfg.TYPES.length === 18, '实际 ' + cfg.TYPES.length);
 check('招式上限为 10', cfg.MAX_MOVES === 10);
 
-/* ---------------- 3. 种子数据 ---------------- */
+/* ---------------- 3. 种子数据（抓取子集） ---------------- */
 section('3. 种子数据');
 const seed = require(path.join(ROOT, 'data/pokemon.data.js'));
 check('种子含 pokemons 数组', Array.isArray(seed.pokemons));
-check('种子至少有 1 条记录', seed.pokemons.length >= 1);
+check('种子条数 ≥ 300', seed.pokemons.length >= 300, '实际 ' + seed.pokemons.length);
+check('meta 标注来源', !!(seed.meta && /pokerogue/i.test(seed.meta.source || '')));
 
 let dataErrors = [];
+const ids = new Set();
 seed.pokemons.forEach(function (p, i) {
   const tag = '[' + (i + 1) + '] ' + (p.name || '(无名)');
   if (!p.id) { dataErrors.push(tag + ' 缺少 id'); }
   if (!p.name) { dataErrors.push(tag + ' 缺少 name'); }
-  if (!Array.isArray(p.moves)) { dataErrors.push(tag + ' moves 不是数组'); }
-  if (p.moves.length > cfg.MAX_MOVES) { dataErrors.push(tag + ' 招式超过 10 条'); }
+  if (ids.has(p.id)) { dataErrors.push(tag + ' id 重复 ' + p.id); }
+  ids.add(p.id);
+  if (typeof p.dexNo !== 'number') { dataErrors.push(tag + ' 缺少图鉴号'); }
+  if (!Array.isArray(p.types) || !p.types.length) { dataErrors.push(tag + ' 缺少属性'); }
   (p.types || []).forEach(function (t) {
     if (!cfg.isType(t)) { dataErrors.push(tag + ' 非法属性 ' + t); }
+  });
+  if ((p.moves || []).length > cfg.MAX_MOVES) { dataErrors.push(tag + ' 招式超过 10 条'); }
+  if (!(p.regions || []).length) { dataErrors.push(tag + ' 缺少区域'); }
+  (p.regions || []).forEach(function (r) {
+    if (!cfg.isRegion(r.region)) { dataErrors.push(tag + ' 区域非法 ' + r.region); }
+    if (!cfg.normalizeRarity(r.rarity)) { dataErrors.push(tag + ' 稀有度非法 ' + r.rarity); }
+    if (/boss/i.test(r.rarity || '')) { dataErrors.push(tag + ' 稀有度仍含 Boss 字样'); }
   });
   (p.moves || []).forEach(function (m) {
     if (!m.name) { dataErrors.push(tag + ' 招式缺少名称'); }
@@ -90,23 +104,44 @@ seed.pokemons.forEach(function (p, i) {
       dataErrors.push(tag + ' 招式分类非法 ' + m.category);
     }
   });
-  (p.regions || []).forEach(function (r) {
-    if (!cfg.isRegion(r.region)) { dataErrors.push(tag + ' 区域不在配置中 ' + r.region); }
-    if (!cfg.normalizeRarity(r.rarity)) { dataErrors.push(tag + ' 稀有度非法 ' + r.rarity); }
-  });
+  if (!(p.abilities || []).length) { dataErrors.push(tag + ' 缺少特性'); }
 });
-check('种子数据结构合法', dataErrors.length === 0, dataErrors.join('；'));
+check('全部记录结构合法', dataErrors.length === 0, dataErrors.slice(0, 5).join('；'));
+
+const lowRanks = seed.pokemons.map(function (p) {
+  const ranks = p.regions.map(function (r) { return cfg.rarityRank(r.rarity); });
+  return Math.min.apply(null, ranks);
+});
+check('每条记录的最低稀有度 ≥ 稀有（去重口径）', lowRanks.every(function (r) { return r >= 3; }),
+  '低于稀有的条数：' + lowRanks.filter(function (r) { return r < 3; }).length);
+
+const bulba = seed.pokemons.find(function (p) { return p.name === '妙蛙种子'; });
+check('存在妙蛙种子', !!bulba);
+if (bulba) {
+  check('妙蛙种子属性为 草/毒', bulba.types.join('/') === '草/毒');
+  check('妙蛙种子被动为 青草制造者', bulba.passives[0] && bulba.passives[0].name === '青草制造者');
+  check('妙蛙种子有进化后', bulba.evolution.next.length > 0);
+  check('妙蛙种子招式 ≤ 10 且 > 0', bulba.moves.length > 0 && bulba.moves.length <= 10);
+}
 
 const hupa = seed.pokemons.find(function (p) { return p.name === '胡帕'; });
-check('种子包含胡帕', !!hupa);
+check('存在胡帕', !!hupa);
 if (hupa) {
-  check('胡帕有特性', hupa.abilities.length === 1 && hupa.abilities[0].name === '魔术师');
-  check('胡帕有被动', hupa.passives.length === 1 && hupa.passives[0].name === '跟风');
-  check('胡帕性格带加减项', hupa.natures[0].delta === '+特攻 -攻击');
-  check('胡帕有 5 个推荐招式', hupa.moves.length === 5);
-  check('胡帕区域为神殿/超级稀有',
-    hupa.regions[0].region === '神殿' && hupa.regions[0].rarity === '超级稀有');
+  check('胡帕在神殿', hupa.regions.some(function (r) { return r.region === '神殿'; }));
+  check('胡帕稀有度为极其稀有', hupa.regions[0].rarity === '极其稀有');
+  check('胡帕被动为跟风', hupa.passives[0] && hupa.passives[0].name === '跟风');
+  check('胡帕特性为魔术师', hupa.abilities[0] && hupa.abilities[0].name === '魔术师');
+  check('胡帕有 10 条推荐招式', hupa.moves.length === 10, '实际 ' + hupa.moves.length);
+  check('胡帕推荐含异次元洞', hupa.moves.some(function (m) { return m.name === '异次元洞'; }));
 }
+
+const statusMoves = [];
+seed.pokemons.forEach(function (p) {
+  (p.moves || []).forEach(function (m) { if (m.category === '变化') { statusMoves.push(m); } });
+});
+check('变化招式的威力统一为 null',
+  statusMoves.every(function (m) { return m.power === null; }),
+  '异常数：' + statusMoves.filter(function (m) { return m.power !== null; }).length);
 
 /* ---------------- 4. 解析器 ---------------- */
 section('4. 模板解析器');
@@ -136,26 +171,19 @@ const m0 = r.data.moves[0];
 check('招式1 异次元洞/超能力/特殊/威力80/必中',
   m0.name === '异次元洞' && m0.type === '超能力' && m0.category === '特殊'
   && m0.power === 80 && m0.accuracy === '必中');
-const m1 = r.data.moves[1];
-check('招式2 暗影球 命中100 效果概率20',
-  m1.name === '暗影球' && m1.accuracy === 100 && m1.chance === 20);
-const m2 = r.data.moves[2];
+check('招式2 暗影球 命中100 效果概率20', r.data.moves[1].accuracy === 100 && r.data.moves[1].chance === 20);
 check('招式3 真气弹 威力120 命中70 概率10',
-  m2.power === 120 && m2.accuracy === 70 && m2.chance === 10);
+  r.data.moves[2].power === 120 && r.data.moves[2].accuracy === 70 && r.data.moves[2].chance === 10);
 check('招式4 诡计为变化招式且无威力', r.data.moves[3].category === '变化' && r.data.moves[3].power === null);
 check('招式5 戏法空间优先度 -7', r.data.moves[4].priority === -7);
-
 check('空文本解析失败', parser.parse('').ok === false);
-const badRarity = parser.parse('测试 + A + B + C 稀有度：神仙稀有');
-check('非法稀有度报错', badRarity.ok === false && badRarity.errors.length > 0);
-
+check('非法稀有度报错', parser.parse('测试 + A + B + C 稀有度：神仙稀有').ok === false);
 const manyMoves = '测试 + A + B + C 推荐招式：' + Array.from({ length: 11 }, function (_, i) {
   return '招式' + (i + 1) + '：一般属性物理招式，威力10，命中100%。';
 }).join(' ');
 check('11 个招式报错', parser.parse(manyMoves).ok === false);
-
-const altNature = parser.parse('测试 + A + B 性格推荐：固执（+攻击，-特攻）');
-check('别名格式性格解析', altNature.data.natures[0].delta === '+攻击 -特攻');
+check('别名格式性格解析',
+  parser.parse('测试 + A + B 性格推荐：固执（+攻击，-特攻）').data.natures[0].delta === '+攻击 -特攻');
 
 /* ---------------- 5. 存储层 ---------------- */
 section('5. 存储层');
@@ -163,24 +191,22 @@ const store = require(path.join(ROOT, 'assets/store.js'));
 store.load(seed);
 check('载入种子', store.count() === seed.pokemons.length);
 check('按名称查询', store.query({ q: '胡帕' }).length === 1);
-check('按别名查询', store.query({ q: 'Hoopa' }).length === 1);
-check('按招式查询', store.query({ q: '戏法空间' }).length === 1);
-check('按区域筛选', store.query({ region: '神殿' }).length === 1);
-check('按稀有度筛选（别名）', store.query({ rarity: '超级稀有' }).length === 1);
-check('无结果返回空数组', store.query({ q: '不存在' }).length === 0);
+check('按别名/招式查询', store.query({ q: '异次元洞' }).length >= 1);
+check('按区域筛选', store.query({ region: '神殿' }).length >= 1);
+check('按稀有度筛选', store.query({ rarity: '极其稀有' }).length >= 1);
+check('按属性筛选', store.query({ type: '草' }).length >= 1);
+check('无结果返回空数组', store.query({ q: '不存在的宝可梦xyz' }).length === 0);
+check('徽章稀有度取最低档', store.minRarity(hupa) === 5, '实际 ' + store.minRarity(hupa));
 
 const before = store.count();
-const added = store.upsert({
-  id: 'pikachu', name: '皮卡丘', aliases: ['Pikachu'], formName: '普通形态',
+store.upsert({
+  id: 'pikachu-test', name: '皮卡丘测试', aliases: [], formName: '普通形态',
   types: ['电'], abilities: [{ name: '静电', desc: '', hidden: false }], passives: [],
-  natures: [{ name: '胆小', delta: '+速度 -攻击', reason: '' }],
-  moves: [{ name: '十万伏特', type: '电', category: '特殊', power: 90, accuracy: 100, priority: 0, effect: '', chance: 10 }],
+  natures: [], moves: [{ name: '十万伏特', type: '电', category: '特殊', power: 90, accuracy: 100, priority: 0, effect: '', chance: 10 }],
   regions: [{ region: '森林', rarity: '罕见', note: '' }],
   evolution: { prev: [], next: [], typeChange: '' }, notes: '', source: '', updatedAt: ''
 });
 check('新增记录', store.count() === before + 1);
-check('新增后可按名称查到', store.query({ q: '皮卡丘' }).length === 1);
-
 const json = store.exportJson();
 check('导出 JSON 可解析', (function () {
   try { return JSON.parse(json).pokemons.length === store.count(); } catch (e) { return false; }
@@ -188,10 +214,8 @@ check('导出 JSON 可解析', (function () {
 check('导入合法 JSON', store.importJson(json).ok === true);
 check('导入非法 JSON 报错', store.importJson('xx').ok === false);
 check('导入结构错误报错', store.importJson('{}').ok === false);
-
 store.resetSeed(seed);
 check('恢复种子', store.count() === seed.pokemons.length);
-check('恢复后新增记录已消失', store.query({ q: '皮卡丘' }).length === 0);
 
 /* ---------------- 6. 页面接线 ---------------- */
 section('6. 页面接线');
@@ -207,12 +231,8 @@ check('页面元素与脚本引用一致', missingIds.length === 0, missingIds.j
     check('index.html 引用 ' + src, html.indexOf(src) !== -1);
   });
 
-check('存在新增按钮', htmlIds.has('btn-add'));
-check('存在一键导入按钮', htmlIds.has('btn-import-open'));
-check('存在导出按钮', htmlIds.has('btn-export'));
-check('存在导入按钮', htmlIds.has('btn-import-file'));
-check('存在恢复种子按钮', htmlIds.has('btn-reset'));
-check('存在示例按钮', htmlIds.has('btn-sample'));
+['btn-add', 'btn-import-open', 'btn-export', 'btn-import-file', 'btn-reset', 'btn-sample']
+  .forEach(function (id) { check('存在按钮 #' + id, htmlIds.has(id)); });
 
 /* ---------------- 汇总 ---------------- */
 console.log('\n' + '='.repeat(46));

@@ -4,7 +4,19 @@
 
 - **零依赖**：纯 HTML + 原生 JS，双击 `index.html` 即可运行，不需要服务器、不需要安装任何东西。
 - **数据自持**：所有数据存在 `data/pokemon.data.js` 与浏览器 localStorage 中，可导出 JSON 备份。
+- **数据来源**：种子数据抓取自 [pokeroguegame.net](https://pokeroguegame.net/zh-cn) 中文图鉴（站点数据源自开源游戏 PokéRogue），
+  收录规则见 [data/schema.md](data/schema.md) 第 1.1 节。
 - **分支**：本项目在 `feature/pokedex` 分支开发，`main` 保持空骨架。
+
+## 数据规模（2026-10-22）
+
+| 项 | 值 |
+|---|---|
+| 收录物种 | 371（最低稀有度 ≥ 稀有） |
+| 稀有档分布 | 稀有 221 / 超级稀有 83 / 极其稀有 67 |
+| 每只推荐招式 | 自动筛选 ≤10 条（本系 + 威力优先） |
+| 性格 | 站点未提供，全部为空，需手工补 |
+| 区域 | 34 类，保留各区域真实稀有度 |
 
 ## 快速开始
 
@@ -60,6 +72,19 @@ apps/pokedex/
 
 完整字段说明见 [data/schema.md](data/schema.md)。
 
+## 抓取工具（重新生成数据）
+
+```bash
+cd apps/pokedex
+node tools/fetch-biomes.mjs     # 阶段 1：34 个生态页 → .cache/phase1.json
+node tools/build-dataset.mjs    # 阶段 2：抓详情页 → .cache/records.json（可 --sample=slug 只验样本）
+node tools/emit-data.mjs        # 生成 data/pokemon.data.js
+```
+
+- 请求限速：并发 2、间隔 600~1000 ms、失败重试 3 次；
+- 原始页面缓存在 `.cache/`（已 gitignore），**中断后重跑不会重复请求**；
+- 更新数据后记得跑一次 `node tests/run.js`。
+
 ## 自检
 
 ```bash
@@ -67,7 +92,8 @@ cd apps/pokedex
 node tests/run.js
 ```
 
-会校验文件完整性、区域/稀有度枚举、种子数据结构、模板解析（用内置样例逐字段断言）、存储层增删改与导入导出、页面元素与脚本引用一致性，共 75 项。
+会校验文件完整性、区域/稀有度枚举、种子数据（条数/去重口径/Boss 已剔除/逐条结构）、
+模板解析逐字段断言、存储层增删改与导入导出、页面元素与脚本引用一致性。
 
 若命令行没有 `node`，用 DSH 自带的：
 

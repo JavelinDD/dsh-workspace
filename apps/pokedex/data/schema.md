@@ -7,13 +7,29 @@
 ```js
 window.POKEDEX_SEED = {
   meta: {
-    version: "1.0.0",
+    version: "2.0.0",
+    schemaVersion: 1,
     updatedAt: "2026-10-22",
-    schemaVersion: 1
+    source: "pokeroguegame.net（数据源自开源游戏 PokéRogue 官方数据）",
+    generatedBy: "apps/pokedex/tools/build-dataset.mjs",
+    note: "去重口径与字段说明"
   },
   pokemons: [ /* 宝可梦记录数组，见下 */ ]
 };
 ```
+
+### 1.1 数据来源与筛选口径（2026-10-22 起）
+
+当前 `pokemon.data.js` 由抓取脚本生成，规则如下：
+
+1. 数据源：`pokeroguegame.net` 的中文图鉴（站点自述数据来自开源游戏 PokéRogue）。
+2. **只收录「最低稀有度 ≥ 稀有」的物种**：某只若在任意区域是普通/罕见，整只不收录。
+3. **Boss 去重**：同一只同时有 Boss 与非 Boss 条目时，丢弃 Boss 条目；纯 Boss 物种不收录。
+4. **区域稀有度保留站点真实值**（如森林=稀有、神殿=超级稀有）；
+   列表徽章与排序使用 `minRarity`，即所有区域中的最低档。
+5. 推荐招式为自动筛选：本系优先 → 威力降序，取前 10；不足时用变化招式补齐。
+6. 站点**不提供性格数据**，抓取记录 `natures` 为空；性格只能手工录入。
+7. 区域命名以本仓库 `config.js` 为准（站点「发电厂」→ 本项目「发电站」）。
 
 ## 2. 宝可梦记录
 
