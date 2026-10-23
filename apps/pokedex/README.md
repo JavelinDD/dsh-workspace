@@ -12,11 +12,21 @@
 
 | 项 | 值 |
 |---|---|
-| 收录物种 | 371（最低稀有度 ≥ 稀有） |
-| 稀有档分布 | 稀有 221 / 超级稀有 83 / 极其稀有 67 |
+| 收录物种 | 372（最低稀有度 ≥ 稀有） |
+| 稀有档分布 | 稀有 222 / 超级稀有 83 / 极其稀有 67 |
 | 每只推荐招式 | 自动筛选 ≤10 条（本系 + 威力优先） |
 | 性格 | 站点未提供，全部为空，需手工补 |
 | 区域 | 34 类，保留各区域真实稀有度 |
+
+## 功能三：队伍桥（Tampermonkey 用户脚本）
+
+在 [pokerogue.net](https://pokerogue.net) 游戏页读取**我方队伍**与**对手**，对照本图鉴显示属性、稀有度、出现区域与推荐配招。
+
+- 入口：[userscript/pokedex-bridge.user.js](userscript/pokedex-bridge.user.js)，安装步骤见 [userscript/README.md](userscript/README.md)
+- 我方数据：官方公共接口 `window.gameInfo`
+- 对手数据：实时读游戏内部 `getEnemyParty()`（实验性），失败自动降级到解密存档快照
+- 手动开关 + 启动检测（网站 / 游戏 / 存档三行状态）
+- 设计说明：[docs/功能三-队伍联动.md](docs/功能三-队伍联动.md)
 
 ## 快速开始
 
@@ -51,9 +61,20 @@ apps/pokedex/
 │   ├── config.js                区域、稀有度、属性等配置
 │   ├── pokemon.data.js          种子数据
 │   └── schema.md                字段字典（数据契约）
+├── userscript/
+│   ├── core.js                  中英文匹配、属性/性格译名
+│   ├── bridge.js                游戏页面板逻辑
+│   ├── pokedex-bridge.user.js   生成的 Tampermonkey 脚本
+│   └── README.md                安装与排错
+├── tools/
+│   ├── fetch-biomes.mjs         抓取生态页
+│   ├── build-dataset.mjs        抓取详情页
+│   ├── emit-data.mjs            生成种子数据
+│   └── build-userscript.mjs     生成用户脚本
 ├── docs/
 │   ├── 需求说明.md
-│   └── 使用手册.md
+│   ├── 使用手册.md
+│   └── 功能三-队伍联动.md
 └── tests/
     └── run.js                   自检脚本（node tests/run.js）
 ```
