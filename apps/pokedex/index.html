@@ -4,9 +4,36 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PokeDex Lite · 宝可梦数据图鉴</title>
+  <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
-  <h1>PokeDex Lite</h1>
-  <p>项目骨架已就绪，界面将在 M3 实现。</p>
+
+  <header class="topbar">
+    <div class="brand"><span class="logo">◓</span>PokeDex <em>Lite</em></div>
+    <div class="search-wrap">
+      <input id="search" type="search" placeholder="搜索宝可梦名称 / 别名 / 招式 / 特性，例如：胡帕" autocomplete="off">
+    </div>
+    <div class="actions" id="actions"></div>
+  </header>
+
+  <div class="filterbar">
+    <label>区域 <select id="filter-region"></select></label>
+    <label>稀有度 <select id="filter-rarity"></select></label>
+    <label>属性 <select id="filter-type"></select></label>
+    <span class="count" id="count"></span>
+  </div>
+
+  <main class="layout">
+    <aside class="list-pane" id="list"></aside>
+    <section class="detail-pane" id="detail"></section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="data/config.js"></script>
+  <script src="data/pokemon.data.js"></script>
+  <script src="assets/parser.js"></script>
+  <script src="assets/store.js"></script>
+  <script src="assets/app.js"></script>
 </body>
 </html>
