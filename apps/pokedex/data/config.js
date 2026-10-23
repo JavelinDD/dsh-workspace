@@ -52,7 +52,8 @@
   var MAX_MOVES = 10;
 
   /**
-   * 归一化稀有度：接受别名与首尾空格，返回标准档位或 null
+   * 归一化稀有度：只接受标准档位与别名表中的写法（精确匹配，不做模糊包含）
+   * 未知写法返回 null，由调用方报错，避免错误数据被静默吞掉
    */
   function normalizeRarity(value) {
     if (value == null) { return null; }
@@ -60,11 +61,6 @@
     if (!key) { return null; }
     if (RARITY_RANK[key]) { return key; }
     if (RARITY_ALIASES[key]) { return RARITY_ALIASES[key]; }
-    // 处理「极为稀有」这类非精确写法：包含关键字
-    var keys = Object.keys(RARITY_ALIASES);
-    for (var i = 0; i < keys.length; i++) {
-      if (key.indexOf(keys[i]) !== -1) { return RARITY_ALIASES[keys[i]]; }
-    }
     return null;
   }
 
