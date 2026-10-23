@@ -234,6 +234,54 @@ check('页面元素与脚本引用一致', missingIds.length === 0, missingIds.j
 ['btn-add', 'btn-import-open', 'btn-export', 'btn-import-file', 'btn-reset', 'btn-sample']
   .forEach(function (id) { check('存在按钮 #' + id, htmlIds.has(id)); });
 
+/* ---------------- 7. 队伍桥（userscript） ---------------- */
+section('7. 队伍桥（userscript）');
+const core = require(path.join(ROOT, 'userscript/core.js'));
+check('英文名归一化 Mr. Mime', core.normalizeKey('Mr. Mime') === 'mr-mime');
+check('英文名归一化 Nidoran♀', core.normalizeKey('Nidoran♀') === 'nidoran-f');
+check('英文名归一化 Farfetch\'d', core.normalizeKey("Farfetch'd") === 'farfetchd');
+check('英文名归一化 Ho-Oh', core.normalizeKey('Ho-Oh') === 'ho-oh');
+check('中文名归一化保持不变', core.normalizeKey('胡帕') === '胡帕');
+check('属性英文名转中文 Fire', core.typeZh('Fire') === '火');
+check('属性数字转中文 9=火', core.typeZh(9) === '火');
+check('性格数字转中文 15=内敛', core.natureZh(15) === '内敛');
+check('稀有度档位转名称 5', core.rarityName(5) === '极其稀有');
+check('稀有度档位转名称 3', core.rarityName(3) === '稀有');
+
+const idx = seed.pokemons.map(function (p) {
+  var RANK = { '普通': 1, '罕见': 2, '稀有': 3, '超级稀有': 4, '极其稀有': 5 };
+  var low = 9;
+  (p.regions || []).forEach(function (r) { var k = RANK[r.rarity] || 0; if (k && k < low) { low = k; } });
+  return {
+    n: p.name, s: p.id, d: p.dexNo, t: p.types, r: low === 9 ? 0 : low,
+    g: p.regions.map(function (r) { return [r.region, r.rarity]; }),
+    m: p.moves.map(function (m) { return m.name; })
+  };
+});
+check('中文名可匹配（胡帕）', !!core.findRecord(idx, '胡帕'));
+check('英文名可匹配（Charizard）', !!core.findRecord(idx, 'Charizard'));
+check('图鉴号可匹配（6 → 喷火龙）',
+  (core.findRecord(idx, '', 6) || {}).n === '喷火龙');
+check('未知名返回 null', core.findRecord(idx, 'NotAPokemon') === null);
+
+const usPath = path.join(ROOT, 'userscript/pokedex-bridge.user.js');
+check('用户脚本已生成', exists('userscript/pokedex-bridge.user.js'));
+if (fs.existsSync(usPath)) {
+  const ujs = fs.readFileSync(usPath, 'utf8');
+  check('含 Tampermonkey 元数据', ujs.indexOf('// ==UserScript==') === 0);
+  check('匹配 pokerogue.net', ujs.indexOf('@match        https://pokerogue.net/*') !== -1);
+  check('document-start 注入', ujs.indexOf('@run-at       document-start') !== -1);
+  check('内嵌图鉴索引', ujs.indexOf('var POKEDEX_INDEX =') !== -1);
+  check('含我方队伍读取', ujs.indexOf('gameInfo') !== -1 && ujs.indexOf('getPlayerParty') !== -1);
+  check('含对手读取与降级', ujs.indexOf('getEnemyParty') !== -1 && ujs.indexOf('sessionData') !== -1);
+  check('含开关持久化', ujs.indexOf('pokedex-bridge-enabled') !== -1);
+  const m = ujs.match(/var POKEDEX_INDEX = (\[[\s\S]*?\]);\n/);
+  let parsed = null;
+  try { parsed = m ? JSON.parse(m[1]) : null; } catch (e) { parsed = null; }
+  check('索引可解析且与种子条数一致', !!parsed && parsed.length === seed.pokemons.length,
+    parsed ? ('索引 ' + parsed.length + ' / 种子 ' + seed.pokemons.length) : '解析失败');
+}
+
 /* ---------------- 汇总 ---------------- */
 console.log('\n' + '='.repeat(46));
 console.log('通过 ' + passed + ' 项，失败 ' + failed + ' 项');
