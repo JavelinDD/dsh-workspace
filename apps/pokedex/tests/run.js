@@ -284,6 +284,10 @@ if (fs.existsSync(usPath)) {
   check('面板尺寸持久化', ujs.indexOf('pokedex-bridge-size') !== -1 && ujs.indexOf('savePanelSize') !== -1);
   check('点击后移除焦点（防空格误触）', ujs.indexOf('.blur()') !== -1 || ujs.indexOf('blur();') !== -1);
   check('拦截空格键激活按钮', ujs.indexOf("key === ' '") !== -1);
+  check('面板可自由拖动（位置持久化）', ujs.indexOf('pokedex-bridge-pos') !== -1 && ujs.indexOf('clampPos') !== -1);
+  check('拖动事件齐全（含边界约束与双击复位）',
+    ujs.indexOf('pointerdown') !== -1 && ujs.indexOf('pointermove') !== -1 && ujs.indexOf('dblclick') !== -1);
+  check('拖拽时暂停重绘', ujs.indexOf('if (dragging) { return; }') !== -1);
   const m = ujs.match(/var POKEDEX_INDEX = (\[[\s\S]*?\]);\n/);
   let parsed = null;
   try { parsed = m ? JSON.parse(m[1]) : null; } catch (e) { parsed = null; }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokeDex 队伍桥（PokéRogue）
 // @namespace    https://github.com/JavelinDD/dsh-workspace
-// @version      0.1.3
+// @version      0.1.4
 // @description  读取 PokéRogue 我方队伍与对手，对照本地图鉴显示稀有度、区域与推荐配招
 // @author       JavelinDD
 // @match        https://pokerogue.net/*
@@ -374,6 +374,107 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
     } catch (e) { /* 忽略 */ }
   }
 
+  /* ---------------- 面板位置（可自由拖动） ---------------- */
+
+  var POS_KEY = 'pokedex-bridge-pos';
+  var pos = null;
+  var posSaved = false;
+  var dragging = false;
+
+  function clampPos(x, y) {
+    var w = ui.panel.offsetWidth || 360;
+    var h = ui.panel.offsetHeight || 320;
+    var maxX = Math.max(8, window.innerWidth - w - 8);
+    var maxY = Math.max(8, window.innerHeight - h - 8);
+    return {
+      x: Math.min(Math.max(8, x), maxX),
+      y: Math.min(Math.max(8, y), maxY)
+    };
+  }
+
+  function applyPos(x, y) {
+    var p = clampPos(x, y);
+    pos = p;
+    ui.panel.style.left = p.x + 'px';
+    ui.panel.style.top = p.y + 'px';
+  }
+
+  /** 默认位置：右下角、悬浮按钮上方 */
+  function defaultPos() {
+    var w = ui.panel.offsetWidth || 360;
+    var h = ui.panel.offsetHeight || 320;
+    return clampPos(window.innerWidth - w - 18, window.innerHeight - h - 84);
+  }
+
+  function restorePanelPos() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(POS_KEY) || 'null');
+      if (saved && typeof saved.x === 'number' && typeof saved.y === 'number') {
+        posSaved = true;
+        applyPos(saved.x, saved.y);
+        return;
+      }
+    } catch (e) { /* 忽略损坏数据 */ }
+    posSaved = false;
+  }
+
+  function savePos() {
+    try {
+      if (pos) { localStorage.setItem(POS_KEY, JSON.stringify(pos)); }
+    } catch (e) { /* 忽略 */ }
+  }
+
+  function bindDrag() {
+    var panel = root.getElementById('panel');
+
+    panel.addEventListener('pointerdown', function (e) {
+      var hd = e.target && e.target.closest ? e.target.closest('.hd') : null;
+      if (!hd) { return; }
+      if (e.target.classList && e.target.classList.contains('x')) { return; }
+      if (e.button !== 0 && e.pointerType === 'mouse') { return; }
+
+      dragging = true;
+      var rect = panel.getBoundingClientRect();
+      var startX = e.clientX;
+      var startY = e.clientY;
+      var originX = rect.left;
+      var originY = rect.top;
+
+      function onMove(ev) {
+        applyPos(originX + (ev.clientX - startX), originY + (ev.clientY - startY));
+      }
+      function onUp() {
+        dragging = false;
+        savePos();
+        posSaved = true;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+      }
+
+      try { e.target.setPointerCapture && e.target.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+      e.preventDefault();
+    });
+
+    // 双击标题栏：回到默认位置
+    panel.addEventListener('dblclick', function (e) {
+      var hd = e.target && e.target.closest ? e.target.closest('.hd') : null;
+      if (!hd) { return; }
+      var d = defaultPos();
+      applyPos(d.x, d.y);
+      posSaved = true;
+      savePos();
+    });
+
+    // 窗口尺寸变化时把面板拉回可视区
+    window.addEventListener('resize', function () {
+      if (pos && panel.style.display !== 'none') { applyPos(pos.x, pos.y); }
+    });
+  }
+
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -383,24 +484,31 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
   function buildUi() {
     host = document.createElement('div');
     host.id = 'pokedex-bridge-host';
-    host.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:2147483647;';
+    // 铺满视口但不拦截点击；面板与悬浮按钮各自绝对定位并开启 pointer-events
+    host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
     root = host.attachShadow({ mode: 'open' });
     root.innerHTML = [
       '<style>',
       ':host{all:initial}',
       '*{box-sizing:border-box;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif}',
-      '.fab{display:flex;align-items:center;gap:6px;padding:10px 14px;border-radius:999px;border:none;cursor:pointer;',
+      '.fab{position:fixed;right:18px;bottom:18px;pointer-events:auto;',
+      'display:flex;align-items:center;gap:6px;padding:10px 14px;border-radius:999px;border:none;cursor:pointer;',
       'background:#1f2937;color:#fff;font-size:13px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.35)}',
       '.fab.on{background:#2563eb}',
       '.dot{width:8px;height:8px;border-radius:50%;background:#9ca3af}',
       '.dot.on{background:#34d399}',
-      '.panel{width:360px;min-width:280px;min-height:140px;max-width:calc(100vw - 40px);max-height:75vh;',
-      'overflow:auto;resize:both;margin-bottom:10px;border-radius:14px;',
+      '.panel{position:fixed;pointer-events:auto;width:360px;min-width:280px;min-height:140px;',
+      'max-width:calc(100vw - 40px);max-height:75vh;overflow:auto;resize:both;border-radius:14px;',
       'background:rgba(17,24,39,.97);color:#e5e7eb;box-shadow:0 12px 40px rgba(0,0,0,.5);font-size:12.5px}',
-      '.hd{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #374151}',
+      '.hd{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #374151;',
+      'cursor:move;user-select:none;touch-action:none}',
+      '.hd:active{background:#1f2937}',
+      '.grip{color:#6b7280;font-size:13px;letter-spacing:1px;line-height:1;cursor:move}',
       '.hd b{font-size:13px;color:#fff}',
       '.hd .sp{flex:1}',
+      '.hd .hint-move{color:#6b7280;font-size:10.5px;white-space:nowrap}',
       '.x{background:none;border:none;color:#9ca3af;font-size:16px;cursor:pointer;padding:0 4px}',
+      '.x:hover{color:#fff}',
       '.sec{padding:10px 12px;border-bottom:1px solid #1f2937}',
       '.sec:last-child{border-bottom:none}',
       '.tt{color:#9ca3af;margin-bottom:6px;font-size:11.5px;letter-spacing:.4px}',
@@ -434,6 +542,8 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
     ui.fabText = root.getElementById('fabText');
 
     restorePanelSize();
+    restorePanelPos();
+    bindDrag();
 
     ui.fab.addEventListener('click', function () {
       panelOpen = !panelOpen;
@@ -496,6 +606,13 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
     try { localStorage.setItem(STORE_KEY, '1'); } catch (e) {}
     render();
     scan();
+    // 首次打开（没有历史位置）时放到悬浮按钮上方；有历史位置则按实际尺寸重新收敛一次
+    if (!posSaved) {
+      var d = defaultPos();
+      applyPos(d.x, d.y);
+    } else if (pos) {
+      applyPos(pos.x, pos.y);
+    }
     if (state.timer) { clearInterval(state.timer); }
     state.timer = setInterval(function () { if (state.enabled) { scan(); } }, 1500);
   }
@@ -569,6 +686,9 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
   function render() {
     if (!ui.panel) { return; }
 
+    // 拖拽中不重建 DOM，避免拖到一半元素被替换
+    if (dragging) { return; }
+
     // 保留用户正在看的调试面板展开状态与滚动位置
     var openedDetails = ui.panel.querySelector('details');
     if (openedDetails) { debugOpen = openedDetails.open; }
@@ -596,7 +716,9 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
     var enemyNote = state.enemySource === '实时（游戏对象）' ? ''
       : '<div class="muted" style="margin-top:4px">对手来自存档快照：招式与部分细节不可用；进入战斗后点「刷新」。</div>';
 
-    ui.panel.innerHTML = '<div class="hd"><b>◓ PokeDex 队伍桥</b><span class="sp"></span>'
+    ui.panel.innerHTML = '<div class="hd" title="按住拖动面板；双击回到默认位置">'
+      + '<span class="grip">⠿</span><b>◓ PokeDex 队伍桥</b>'
+      + '<span class="sp"></span><span class="hint-move">拖动</span>'
       + '<button class="x" id="close" title="关闭">×</button></div>'
       + status
       + '<div class="sec"><div class="tt">我方队伍（' + state.player.length + '）</div>' + playerHtml + '</div>'
