@@ -76,7 +76,10 @@
     ['search', 'filter-region', 'filter-rarity', 'filter-type', 'count', 'list', 'detail', 'toast']
       .forEach(function (id) { el[id] = $(id); });
 
-    store.init(window.POKEDEX_SEED);
+    store.load(window.POKEDEX_SEED);
+    if (!store.save()) {
+      setTimeout(function () { toast('当前环境无法使用本地存储，修改只在本次会话有效', true); }, 300);
+    }
 
     fillSelect(el['filter-region'], cfg.REGIONS, '全部区域');
     fillSelect(el['filter-rarity'], cfg.RARITIES, '全部稀有度');
@@ -92,6 +95,10 @@
 
     $('btn-add').addEventListener('click', function () { openForm(null); });
     $('btn-import-open').addEventListener('click', openImport);
+    $('btn-export').addEventListener('click', exportData);
+    $('btn-import-file').addEventListener('click', function () { $('file-import').click(); });
+    $('file-import').addEventListener('change', importFile);
+    $('btn-reset').addEventListener('click', resetSeed);
 
     bindFormEvents();
     bindImportEvents();
@@ -678,6 +685,49 @@
     }
     html.push('</div>');
     return html.join('');
+  }
+
+  /* ---------------- 导入导出 ---------------- */
+
+  function exportData() {
+    var json = store.exportJson();
+    var blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'pokedex-' + today().replace(/-/g, '') + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+    toast('已导出 ' + store.count() + ' 条记录');
+  }
+
+  function importFile(e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) { return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var result = store.importJson(String(reader.result));
+      e.target.value = '';
+      if (!result.ok) {
+        toast(result.error, true);
+        return;
+      }
+      state.currentId = null;
+      render();
+      toast('已导入 ' + result.count + ' 条记录');
+    };
+    reader.onerror = function () { toast('文件读取失败', true); e.target.value = ''; };
+    reader.readAsText(file, 'utf-8');
+  }
+
+  function resetSeed() {
+    if (!window.confirm('恢复种子数据会覆盖当前所有修改，确定继续？')) { return; }
+    store.resetSeed(window.POKEDEX_SEED);
+    state.currentId = null;
+    render();
+    toast('已恢复种子数据');
   }
 
   /* ---------------- 提示 ---------------- */
