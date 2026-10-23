@@ -290,6 +290,11 @@
       if (t.id === 'refresh') { scan(); return; }
       if (t.id === 'copy') { copyList(); return; }
     });
+
+    // toggle 事件不冒泡，用捕获监听记录调试面板的展开状态
+    root.getElementById('panel').addEventListener('toggle', function (e) {
+      if (e.target && e.target.tagName === 'DETAILS') { debugOpen = e.target.open; }
+    }, true);
   }
 
   function enable() {
@@ -355,8 +360,36 @@
       + '</div>';
   }
 
+  var lastSignature = '';
+  var debugOpen = false;
+
+  function signatureOf() {
+    return JSON.stringify({
+      p: state.player.map(function (p) {
+        return [p.name, p.level, p.hp, p.maxHp, (p.moves || []).join(','), p.ability, p.nature, p.types.join(',')];
+      }),
+      e: state.enemy.map(function (p) {
+        return [p.name, p.level, p.hp, p.maxHp, p.boss || ''];
+      }),
+      ps: state.playerSource,
+      es: state.enemySource,
+      err: state.error
+    });
+  }
+
   function render() {
     if (!ui.panel) { return; }
+
+    // 保留用户正在看的调试面板展开状态与滚动位置
+    var openedDetails = ui.panel.querySelector('details');
+    if (openedDetails) { debugOpen = openedDetails.open; }
+    var scrollTop = ui.panel.scrollTop;
+
+    // 数据没变化就不重建 DOM（避免每 1.5 秒闪一下、把展开的调试信息关掉）
+    var signature = signatureOf();
+    if (signature === lastSignature && ui.panel.childElementCount) { return; }
+    lastSignature = signature;
+
     var gameReady = !!(state.scene || (state.info && state.info.party));
     var saveReady = false;
     try { saveReady = Object.keys(localStorage).some(function (k) { return /^sessionData/.test(k); }); } catch (e) {}
@@ -395,6 +428,10 @@
       + '</pre></details>'
       + '<div class="muted" style="flex-basis:100%">本地图鉴：' + esc(APP_PATH) + '</div>'
       + '</div>';
+
+    var newDetails = ui.panel.querySelector('details');
+    if (newDetails && debugOpen) { newDetails.open = true; }
+    ui.panel.scrollTop = scrollTop;
   }
 
   function copyList() {

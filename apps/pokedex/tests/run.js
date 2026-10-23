@@ -278,6 +278,8 @@ if (fs.existsSync(usPath)) {
   check('含我方队伍读取', ujs.indexOf('gameInfo') !== -1 && ujs.indexOf('getPlayerParty') !== -1);
   check('含对手读取与降级', ujs.indexOf('getEnemyParty') !== -1 && ujs.indexOf('sessionData') !== -1);
   check('含开关持久化', ujs.indexOf('pokedex-bridge-enabled') !== -1);
+  check('含重绘去抖（数据不变不重建）', ujs.indexOf('lastSignature') !== -1 && ujs.indexOf('signatureOf') !== -1);
+  check('保留调试面板展开状态', ujs.indexOf('debugOpen') !== -1);
   const m = ujs.match(/var POKEDEX_INDEX = (\[[\s\S]*?\]);\n/);
   let parsed = null;
   try { parsed = m ? JSON.parse(m[1]) : null; } catch (e) { parsed = null; }
