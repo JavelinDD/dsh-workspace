@@ -22,6 +22,8 @@
 2. 新建脚本，粘贴 `apps/pokedex/userscript/pokedex-bridge.user.js` 全部内容并保存
 3. 打开 https://pokerogue.net ，右下角点「图鉴桥」
 
+> 换电脑部署、私有仓库克隆、数据同步等，见 [docs/部署指南.md](docs/部署指南.md)。
+
 ## 功能
 
 | 模块 | 能力 |
