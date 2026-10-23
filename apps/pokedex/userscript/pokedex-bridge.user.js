@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokeDex 队伍桥（PokéRogue）
 // @namespace    https://github.com/JavelinDD/dsh-workspace
-// @version      0.1.2
+// @version      0.1.3
 // @description  读取 PokéRogue 我方队伍与对手，对照本地图鉴显示稀有度、区域与推荐配招
 // @author       JavelinDD
 // @match        https://pokerogue.net/*
@@ -349,6 +349,30 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
   /* ---------------- 界面 ---------------- */
 
   var host = null, root = null, panelOpen = false, ui = {};
+  var SIZE_KEY = 'pokedex-bridge-size';
+
+  function restorePanelSize() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(SIZE_KEY) || 'null');
+      if (!saved) { return; }
+      if (saved.w) {
+        ui.panel.style.width = Math.max(280, Math.min(saved.w, window.innerWidth - 40)) + 'px';
+      }
+      if (saved.h) {
+        ui.panel.style.height = Math.max(140, Math.min(saved.h, window.innerHeight * 0.75)) + 'px';
+      }
+    } catch (e) { /* 数据损坏时忽略 */ }
+  }
+
+  function savePanelSize() {
+    try {
+      var w = ui.panel.offsetWidth;
+      var h = ui.panel.offsetHeight;
+      if (w > 0 && h > 0) {
+        localStorage.setItem(SIZE_KEY, JSON.stringify({ w: w, h: h }));
+      }
+    } catch (e) { /* 忽略 */ }
+  }
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -370,7 +394,8 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
       '.fab.on{background:#2563eb}',
       '.dot{width:8px;height:8px;border-radius:50%;background:#9ca3af}',
       '.dot.on{background:#34d399}',
-      '.panel{width:360px;max-height:70vh;overflow:auto;margin-bottom:10px;border-radius:14px;',
+      '.panel{width:360px;min-width:280px;min-height:140px;max-width:calc(100vw - 40px);max-height:75vh;',
+      'overflow:auto;resize:both;margin-bottom:10px;border-radius:14px;',
       'background:rgba(17,24,39,.97);color:#e5e7eb;box-shadow:0 12px 40px rgba(0,0,0,.5);font-size:12.5px}',
       '.hd{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #374151}',
       '.hd b{font-size:13px;color:#fff}',
@@ -408,9 +433,13 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
     ui.dot = root.getElementById('dot');
     ui.fabText = root.getElementById('fabText');
 
+    restorePanelSize();
+
     ui.fab.addEventListener('click', function () {
       panelOpen = !panelOpen;
       if (panelOpen) { enable(); } else { disable(); }
+      // 关键：点击后立刻移开焦点，否则空格键会再次激活按钮（游戏里空格是常用键）
+      try { ui.fab.blur(); } catch (e) { /* 忽略 */ }
     });
 
     root.getElementById('panel').addEventListener('click', function (e) {
@@ -419,6 +448,37 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
       if (t.id === 'refresh') { scan(); return; }
       if (t.id === 'copy') { copyList(); return; }
     });
+
+    // 面板内点击后同样移开焦点，避免空格/回车误触
+    root.getElementById('panel').addEventListener('click', function (e) {
+      var t = e.target;
+      if (t && typeof t.blur === 'function') {
+        setTimeout(function () { try { t.blur(); } catch (err) { /* 忽略 */ } }, 0);
+      }
+    });
+
+    // 兜底：即使焦点留在按钮上，也吞掉空格键，不让它触发按钮
+    host.addEventListener('keydown', function (e) {
+      var key = e.key;
+      if (key === ' ' || key === 'Spacebar') {
+        var t = e.target;
+        if (t && (t.tagName === 'BUTTON' || t.tagName === 'SUMMARY')) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    }, true);
+
+    // 记录面板尺寸变化（原生 resize 手柄拖拽后持久化）
+    if (window.ResizeObserver) {
+      try {
+        var resizeTimer = null;
+        new ResizeObserver(function () {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(savePanelSize, 400);
+        }).observe(ui.panel);
+      } catch (e) { /* 浏览器不支持时忽略 */ }
+    }
 
     // toggle 事件不冒泡，用捕获监听记录调试面板的展开状态
     root.getElementById('panel').addEventListener('toggle', function (e) {

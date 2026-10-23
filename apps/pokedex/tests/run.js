@@ -280,6 +280,10 @@ if (fs.existsSync(usPath)) {
   check('含开关持久化', ujs.indexOf('pokedex-bridge-enabled') !== -1);
   check('含重绘去抖（数据不变不重建）', ujs.indexOf('lastSignature') !== -1 && ujs.indexOf('signatureOf') !== -1);
   check('保留调试面板展开状态', ujs.indexOf('debugOpen') !== -1);
+  check('面板可拖拽调整大小', ujs.indexOf('resize:both') !== -1 && ujs.indexOf('min-width:280px') !== -1);
+  check('面板尺寸持久化', ujs.indexOf('pokedex-bridge-size') !== -1 && ujs.indexOf('savePanelSize') !== -1);
+  check('点击后移除焦点（防空格误触）', ujs.indexOf('.blur()') !== -1 || ujs.indexOf('blur();') !== -1);
+  check('拦截空格键激活按钮', ujs.indexOf("key === ' '") !== -1);
   const m = ujs.match(/var POKEDEX_INDEX = (\[[\s\S]*?\]);\n/);
   let parsed = null;
   try { parsed = m ? JSON.parse(m[1]) : null; } catch (e) { parsed = null; }
