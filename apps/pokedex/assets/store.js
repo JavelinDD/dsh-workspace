@@ -1,0 +1,267 @@
+/**
+ * 存储层：查询、增删改、本地持久化（localStorage）、导入导出
+ * 浏览器：window.PokeStore
+ * Node：require('./store.js')（无 localStorage，退化为内存态，便于测试）
+ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) { module.exports = api; }
+  root.PokeStore = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  var STORAGE_KEY = 'pokedex-lite-v1';
+  var state = { meta: {}, pokemons: [] };
+
+  function clone(obj) {
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  function storage() {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) { return localStorage; }
+    } catch (e) { /* 隐私模式 / file:// 限制 */ }
+    return null;
+  }
+
+  function normalize(list) {
+    (list || []).forEach(function (p) {
+      if (!p.aliases) { p.aliases = []; }
+      if (!p.abilities) { p.abilities = []; }
+      if (!p.passives) { p.passives = []; }
+      if (!p.natures) { p.natures = []; }
+      if (!p.moves) { p.moves = []; }
+      if (!p.regions) { p.regions = []; }
+      if (!p.types) { p.types = []; }
+      if (!p.evolution) { p.evolution = { prev: [], next: [], typeChange: '' }; }
+    });
+  }
+
+  function setState(next) {
+    state = clone(next || { meta: {}, pokemons: [] });
+    if (!Array.isArray(state.pokemons)) { state.pokemons = []; }
+    normalize(state.pokemons);
+    return state;
+  }
+
+  function init(seed) {
+    return setState(seed);
+  }
+
+  /** 优先读取 localStorage，没有则用种子数据；种子版本变化时以新数据为准 */
+  function load(seed) {
+    var st = storage();
+    if (st) {
+      try {
+        var raw = st.getItem(STORAGE_KEY);
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          if (parsed && Array.isArray(parsed.pokemons)) {
+            var seedVersion = seed && seed.meta && seed.meta.version;
+            var storedVersion = parsed.meta && parsed.meta.version;
+            // 版本一致（或种子没标版本）才沿用本地数据，否则用新种子覆盖
+            if (!seedVersion || !storedVersion || storedVersion === seedVersion) {
+              return setState(parsed);
+            }
+          }
+        }
+      } catch (e) {
+        // 数据损坏时回退到种子，不阻塞页面
+      }
+    }
+    return setState(seed);
+  }
+
+  function save() {
+    var st = storage();
+    if (!st) { return false; }
+    try {
+      st.setItem(STORAGE_KEY, JSON.stringify(state));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function all() { return state.pokemons; }
+
+  function get(id) {
+    for (var i = 0; i < state.pokemons.length; i++) {
+      if (state.pokemons[i].id === id) { return state.pokemons[i]; }
+    }
+    return null;
+  }
+
+  function topRarity(p) {
+    var cfg = (typeof window !== 'undefined' ? window : globalThis).POKEDEX_CONFIG;
+    var best = 0;
+    (p.regions || []).forEach(function (r) {
+      var rank = cfg ? cfg.rarityRank(r.rarity) : 0;
+      if (rank > best) { best = rank; }
+    });
+    return best;
+  }
+
+  /**
+   * 记录徽章用的稀有度：取所有区域中的「最低档」
+   * （口径：某只最高出现在普通，则它就不算稀有；徽章展示它最容易被遇到时的稀有度）
+   */
+  function minRarity(p) {
+    var cfg = (typeof window !== 'undefined' ? window : globalThis).POKEDEX_CONFIG;
+    var low = 0;
+    (p.regions || []).forEach(function (r) {
+      var rank = cfg ? cfg.rarityRank(r.rarity) : 0;
+      if (!rank) { return; }
+      if (!low || rank < low) { low = rank; }
+    });
+    return low;
+  }
+
+  function query(opts) {
+    opts = opts || {};
+    var q = (opts.q || '').trim().toLowerCase();
+    var cfg = (typeof window !== 'undefined' ? window : globalThis).POKEDEX_CONFIG;
+
+    var list = state.pokemons.filter(function (p) {
+      if (opts.region && !(p.regions || []).some(function (r) { return r.region === opts.region; })) {
+        return false;
+      }
+      if (opts.rarity && !(p.regions || []).some(function (r) {
+        return cfg.normalizeRarity(r.rarity) === opts.rarity;
+      })) {
+        return false;
+      }
+      if (opts.type && (p.types || []).indexOf(opts.type) === -1) { return false; }
+      if (!q) { return true; }
+
+      var hay = [
+        p.name, p.formName, (p.aliases || []).join(' '),
+        (p.abilities || []).map(function (a) { return a.name; }).join(' '),
+        (p.passives || []).map(function (a) { return a.name; }).join(' '),
+        (p.natures || []).map(function (a) { return a.name; }).join(' '),
+        (p.moves || []).map(function (m) { return m.name; }).join(' '),
+        (p.regions || []).map(function (r) { return r.region; }).join(' ')
+      ].join(' ').toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
+
+    list.sort(function (a, b) {
+      if (q) {
+        var an = a.name.toLowerCase() === q ? 1 : 0;
+        var bn = b.name.toLowerCase() === q ? 1 : 0;
+        if (an !== bn) { return bn - an; }
+      }
+      var ra = minRarity(a);
+      var rb = minRarity(b);
+      if (ra !== rb) { return rb - ra; }
+      return a.name.localeCompare(b.name, 'zh-Hans-CN');
+    });
+    return list;
+  }
+
+  function nextId(base) {
+    var id = base || 'entry';
+    if (!get(id)) { return id; }
+    var n = 2;
+    while (get(id + '-' + n)) { n++; }
+    return id + '-' + n;
+  }
+
+  function upsert(pokemon) {
+    var rec = clone(pokemon);
+    var idx = -1;
+    for (var i = 0; i < state.pokemons.length; i++) {
+      if (state.pokemons[i].id === rec.id) { idx = i; break; }
+    }
+    if (idx >= 0) {
+      state.pokemons[idx] = rec;
+    } else {
+      rec.id = nextId(rec.id);
+      state.pokemons.push(rec);
+    }
+    normalize([rec]);
+    save();
+    return rec;
+  }
+
+  function remove(id) {
+    var before = state.pokemons.length;
+    state.pokemons = state.pokemons.filter(function (p) { return p.id !== id; });
+    var changed = state.pokemons.length < before;
+    if (changed) { save(); }
+    return changed;
+  }
+
+  function snapshot() { return clone(state); }
+
+  function replace(next) {
+    setState(next);
+    save();
+    return state;
+  }
+
+  function resetSeed(seed) {
+    setState(seed);
+    save();
+    return state;
+  }
+
+  function count() { return state.pokemons.length; }
+
+  /** 导出为格式化 JSON 字符串 */
+  function exportJson() {
+    var out = clone(state);
+    out.meta = out.meta || {};
+    out.meta.exportedAt = new Date().toISOString();
+    return JSON.stringify(out, null, 2);
+  }
+
+  /**
+   * 从 JSON 字符串导入
+   * @returns {{ok:boolean, count:number, error:string}}
+   */
+  function importJson(text) {
+    var parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      return { ok: false, count: 0, error: 'JSON 格式错误：' + e.message };
+    }
+    if (!parsed || !Array.isArray(parsed.pokemons)) {
+      return { ok: false, count: 0, error: '文件结构不正确：缺少 pokemons 数组。' };
+    }
+    var bad = parsed.pokemons.filter(function (p) { return !p || typeof p.name !== 'string'; });
+    if (bad.length) {
+      return { ok: false, count: 0, error: '有 ' + bad.length + ' 条记录缺少 name 字段。' };
+    }
+    setState(parsed);
+    save();
+    return { ok: true, count: state.pokemons.length, error: '' };
+  }
+
+  function clearStorage() {
+    var st = storage();
+    if (st) { st.removeItem(STORAGE_KEY); }
+  }
+
+  return {
+    STORAGE_KEY: STORAGE_KEY,
+    init: init,
+    load: load,
+    save: save,
+    all: all,
+    get: get,
+    query: query,
+    upsert: upsert,
+    remove: remove,
+    snapshot: snapshot,
+    replace: replace,
+    resetSeed: resetSeed,
+    count: count,
+    exportJson: exportJson,
+    importJson: importJson,
+    clearStorage: clearStorage,
+    topRarity: topRarity,
+    minRarity: minRarity
+  };
+});
