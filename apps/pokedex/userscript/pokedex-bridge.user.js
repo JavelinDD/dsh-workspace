@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokeDex 队伍桥（PokéRogue）
 // @namespace    https://github.com/JavelinDD/dsh-workspace
-// @version      0.1.0
+// @version      0.1.1
 // @description  读取 PokéRogue 我方队伍与对手，对照本地图鉴显示稀有度、区域与推荐配招
 // @author       JavelinDD
 // @match        https://pokerogue.net/*
@@ -41,6 +41,15 @@
     '沉着', '温和', '温顺', '慎重', '浮躁'
   ];
 
+  // gameInfo 里的 nature 是英文枚举名（如 Docile），需要映射回中文
+  var NATURES_EN = {
+    'Hardy': '勤奋', 'Lonely': '孤独', 'Brave': '勇敢', 'Adamant': '固执', 'Naughty': '顽皮',
+    'Bold': '大胆', 'Docile': '坦率', 'Relaxed': '悠闲', 'Impish': '淘气', 'Lax': '乐天',
+    'Timid': '胆小', 'Hasty': '急躁', 'Serious': '认真', 'Jolly': '开朗', 'Naive': '天真',
+    'Modest': '内敛', 'Mild': '慢吞吞', 'Quiet': '冷静', 'Bashful': '害羞', 'Rash': '马虎',
+    'Calm': '沉着', 'Gentle': '温和', 'Sassy': '温顺', 'Careful': '慎重', 'Quirky': '浮躁'
+  };
+
   /**
    * 归一化名称，用于中英文混排匹配
    * 「Mr. Mime」→ mr-mime；「Nidoran♀」→ nidoran-f；中文原样保留
@@ -63,10 +72,15 @@
     return TYPE_ZH[s] || s;
   }
 
+  /**
+   * 性格译名：支持数字枚举（0~24）、英文枚举名（gameInfo 用）、中文原样
+   */
   function natureZh(value) {
-    if (value == null) { return ''; }
+    if (value == null || value === '') { return ''; }
     if (typeof value === 'number') { return NATURES[value] || ''; }
-    return String(value);
+    var s = String(value);
+    if (NATURES_EN[s]) { return NATURES_EN[s]; }
+    return s;
   }
 
   /** 在索引里查找记录：优先图鉴号，其次中文名，再次归一化英文名 */
@@ -136,34 +150,34 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
     enemy: [],
     playerSource: '',
     enemySource: '',
+    enemyKeys: [],
     lastScan: 0,
     error: ''
   };
 
-  /* ---------------- 捕获游戏实例 ---------------- */
+  /* ---------------- 探测游戏实例 ---------------- */
 
-  // 在 gameInfo 赋值时，用 V8 调用栈的 getThis() 拿到 BattleScene 实例（拿不到就降级）
-  function captureScene() {
-    var prevPrepare = Error.prepareStackTrace;
-    var prevLimit = Error.stackTraceLimit;
-    var frames = null;
+  // 说明：BattleScene 没有挂到 window；且 V8 的 CallSite.getThis() 对 class 方法返回 undefined，
+  // 所以「调用栈捕获」这条路过不通（已用 Node/V8 复现验证）。
+  // 这里只做低成本探测（调试模式或某些环境可能暴露 game/Phaser），失败则走存档快照。
+  function probeGlobalScene() {
     try {
-      Error.prepareStackTrace = function (err, stack) { return stack; };
-      Error.stackTraceLimit = 80;
-      frames = new Error().stack;
-    } catch (e) {
-      frames = null;
-    } finally {
-      Error.prepareStackTrace = prevPrepare;
-      Error.stackTraceLimit = prevLimit;
-    }
-    if (!frames || !frames.length) { return null; }
-    for (var i = 0; i < frames.length; i++) {
-      try {
-        var receiver = frames[i].getThis && frames[i].getThis();
-        if (receiver && typeof receiver.getPlayerParty === 'function') { return receiver; }
-      } catch (e) { /* 某些帧不允许 */ }
-    }
+      var candidates = [];
+      if (window.game) { candidates.push(window.game); }
+      if (window.Phaser && window.Phaser.GAMES) { candidates = candidates.concat(window.Phaser.GAMES); }
+      if (window.scene) { candidates.push(window.scene); }
+      for (var i = 0; i < candidates.length; i++) {
+        var c = candidates[i];
+        if (!c) { continue; }
+        if (typeof c.getPlayerParty === 'function') { return c; }
+        if (c.scene) {
+          if (typeof c.scene.getPlayerParty === 'function') { return c.scene; }
+          if (c.scene.keys && c.scene.keys.battle && typeof c.scene.keys.battle.getPlayerParty === 'function') {
+            return c.scene.keys.battle;
+          }
+        }
+      }
+    } catch (e) { /* 探测失败忽略 */ }
     return null;
   }
 
@@ -175,7 +189,7 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
       set: function (value) {
         storedInfo = value;
         state.info = value;
-        if (!state.scene) { state.scene = captureScene(); }
+        if (!state.scene) { state.scene = probeGlobalScene(); }
         if (state.enabled) { scheduleScan(); }
       }
     });
@@ -241,19 +255,31 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
   }
 
   function savePokemon(entry) {
-    var rec = null;
-    if (typeof entry.id === 'number') { rec = findRecord('', entry.id); }
+    // PokemonData.id 是实例 ID，物种在 species 字段（全国图鉴号）；species 缺失时才退回 id 猜测
+    var species = (typeof entry.species === 'number' && entry.species > 0)
+      ? entry.species
+      : (typeof entry.id === 'number' && entry.id > 0 && entry.id < 2000 ? entry.id : null);
+    var rec = species ? findRecord('', species) : null;
+
+    var ability = '';
+    if (rec && rec.a && rec.a.length && typeof entry.abilityIndex === 'number') {
+      ability = rec.a[entry.abilityIndex] || '';
+    }
+    var passive = '';
+    if (rec && rec.p && rec.p.length && entry.passive) { passive = rec.p[0] + '（推测）'; }
+
     return {
-      name: rec ? rec.n : ('#' + entry.id + (entry.form ? '-' + entry.form : '')),
+      name: rec ? rec.n : ('物种 #' + (species == null ? '?' : species)),
       level: entry.level || 0,
       hp: entry.hp || 0,
-      maxHp: entry.maxHp || 0,
+      maxHp: Array.isArray(entry.stats) ? (entry.stats[0] || 0) : 0,
       types: rec ? rec.t : [],
-      ability: '',
-      passive: '',
-      nature: '',
+      ability: ability,
+      passive: passive,
+      nature: window.PokeCore.natureZh(entry.nature),
       moves: [],
-      shiny: false,
+      shiny: !!entry.shiny,
+      boss: entry.boss ? ('Boss ×' + (entry.bossSegments || 1)) : '',
       fromSave: true,
       record: rec
     };
@@ -308,6 +334,8 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
       var snapshot = readSave();
       state.enemy = snapshot ? snapshot.data.enemyParty.map(savePokemon) : [];
       state.enemySource = snapshot ? ('存档快照（' + snapshot.key + '）') : '不可用';
+      state.enemyKeys = (snapshot && snapshot.data.enemyParty[0])
+        ? Object.keys(snapshot.data.enemyParty[0]).slice(0, 24) : [];
     } else {
       state.player = [];
       state.enemy = [];
@@ -445,6 +473,7 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
       + '<span class="nm">' + esc(p.name) + (p.shiny ? ' ✦' : '') + '</span>'
       + '<span class="lv">Lv.' + esc(p.level) + '</span>'
       + (hp ? '<span class="hp">HP ' + esc(hp) + '</span>' : '')
+      + (p.boss ? '<span class="tag" style="background:#7f1d1d;color:#fecaca">' + esc(p.boss) + '</span>' : '')
       + (p.types || []).map(typeBadge).join('')
       + '</div>'
       + (p.ability || p.passive ? '<div class="mv">特性：' + esc(p.ability || '—')
@@ -471,12 +500,14 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
 
     var playerHtml = state.player.map(rowHtml).join('') || '<div class="muted">暂无数据</div>';
     var enemyHtml = state.enemy.map(rowHtml).join('') || '<div class="muted">暂无数据（非战斗或存档未更新）</div>';
+    var enemyNote = state.enemySource === '实时（游戏对象）' ? ''
+      : '<div class="muted" style="margin-top:4px">对手来自存档快照：招式与部分细节不可用；进入战斗后点「刷新」。</div>';
 
     ui.panel.innerHTML = '<div class="hd"><b>◓ PokeDex 队伍桥</b><span class="sp"></span>'
       + '<button class="x" id="close" title="关闭">×</button></div>'
       + status
       + '<div class="sec"><div class="tt">我方队伍（' + state.player.length + '）</div>' + playerHtml + '</div>'
-      + '<div class="sec"><div class="tt">对手（' + state.enemy.length + '）</div>' + enemyHtml + '</div>'
+      + '<div class="sec"><div class="tt">对手（' + state.enemy.length + '）</div>' + enemyHtml + enemyNote + '</div>'
       + '<div class="sec" style="display:flex;gap:6px;flex-wrap:wrap">'
       + '<button class="btn" id="refresh">刷新</button>'
       + '<button class="btn" id="copy">复制名单</button>'
@@ -486,6 +517,7 @@ var POKEDEX_INDEX = [{"n":"妙蛙种子","s":"bulbasaur","d":1,"t":["草","毒"]
         gameInfo: !!state.info,
         playerSource: state.playerSource,
         enemySource: state.enemySource,
+        enemyFields: state.enemyKeys,
         index: INDEX.length,
         lastScan: state.lastScan ? new Date(state.lastScan).toLocaleTimeString() : ''
       }, null, 2))

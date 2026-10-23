@@ -245,6 +245,9 @@ check('中文名归一化保持不变', core.normalizeKey('胡帕') === '胡帕'
 check('属性英文名转中文 Fire', core.typeZh('Fire') === '火');
 check('属性数字转中文 9=火', core.typeZh(9) === '火');
 check('性格数字转中文 15=内敛', core.natureZh(15) === '内敛');
+check('性格英文转中文 Docile=坦率', core.natureZh('Docile') === '坦率');
+check('性格英文转中文 Sassy=温顺', core.natureZh('Sassy') === '温顺');
+check('性格已中文原样返回', core.natureZh('内敛') === '内敛');
 check('稀有度档位转名称 5', core.rarityName(5) === '极其稀有');
 check('稀有度档位转名称 3', core.rarityName(3) === '稀有');
 

@@ -29,6 +29,15 @@
     '沉着', '温和', '温顺', '慎重', '浮躁'
   ];
 
+  // gameInfo 里的 nature 是英文枚举名（如 Docile），需要映射回中文
+  var NATURES_EN = {
+    'Hardy': '勤奋', 'Lonely': '孤独', 'Brave': '勇敢', 'Adamant': '固执', 'Naughty': '顽皮',
+    'Bold': '大胆', 'Docile': '坦率', 'Relaxed': '悠闲', 'Impish': '淘气', 'Lax': '乐天',
+    'Timid': '胆小', 'Hasty': '急躁', 'Serious': '认真', 'Jolly': '开朗', 'Naive': '天真',
+    'Modest': '内敛', 'Mild': '慢吞吞', 'Quiet': '冷静', 'Bashful': '害羞', 'Rash': '马虎',
+    'Calm': '沉着', 'Gentle': '温和', 'Sassy': '温顺', 'Careful': '慎重', 'Quirky': '浮躁'
+  };
+
   /**
    * 归一化名称，用于中英文混排匹配
    * 「Mr. Mime」→ mr-mime；「Nidoran♀」→ nidoran-f；中文原样保留
@@ -51,10 +60,15 @@
     return TYPE_ZH[s] || s;
   }
 
+  /**
+   * 性格译名：支持数字枚举（0~24）、英文枚举名（gameInfo 用）、中文原样
+   */
   function natureZh(value) {
-    if (value == null) { return ''; }
+    if (value == null || value === '') { return ''; }
     if (typeof value === 'number') { return NATURES[value] || ''; }
-    return String(value);
+    var s = String(value);
+    if (NATURES_EN[s]) { return NATURES_EN[s]; }
+    return s;
   }
 
   /** 在索引里查找记录：优先图鉴号，其次中文名，再次归一化英文名 */

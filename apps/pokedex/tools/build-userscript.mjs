@@ -48,7 +48,7 @@ const header = [
   '// ==UserScript==',
   '// @name         PokeDex 队伍桥（PokéRogue）',
   '// @namespace    https://github.com/JavelinDD/dsh-workspace',
-  '// @version      0.1.0',
+  '// @version      0.1.1',
   '// @description  读取 PokéRogue 我方队伍与对手，对照本地图鉴显示稀有度、区域与推荐配招',
   '// @author       JavelinDD',
   '// @match        https://pokerogue.net/*',
