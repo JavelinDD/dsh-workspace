@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PokeDex 队伍桥（PokéRogue）
 // @namespace    https://github.com/JavelinDD/dsh-workspace
-// @version      0.2.2
+// @version      0.2.4
 // @description  读取 PokéRogue 我方队伍与对手，对照本地图鉴显示属性、克制关系与当前招式
 // @author       JavelinDD
 // @match        https://pokerogue.net/*
@@ -522,18 +522,18 @@ var POKEDEX_MOVES = {"1":{"n":"拍击","t":"一般","c":"物理"},"2":{"n":"空�
       var saved = JSON.parse(localStorage.getItem(SIZE_KEY) || 'null');
       if (!saved) { return; }
       if (saved.w) {
-        ui.panel.style.width = Math.max(280, Math.min(saved.w, window.innerWidth - 40)) + 'px';
+        ui.frame.style.width = Math.max(280, Math.min(saved.w, window.innerWidth - 40)) + 'px';
       }
       if (saved.h) {
-        ui.panel.style.height = Math.max(140, Math.min(saved.h, window.innerHeight * 0.75)) + 'px';
+        ui.frame.style.height = Math.max(160, Math.min(saved.h, window.innerHeight - 40)) + 'px';
       }
     } catch (e) { /* 数据损坏时忽略 */ }
   }
 
   function savePanelSize() {
     try {
-      var w = ui.panel.offsetWidth;
-      var h = ui.panel.offsetHeight;
+      var w = ui.frame.offsetWidth;
+      var h = ui.frame.offsetHeight;
       if (w > 0 && h > 0) {
         localStorage.setItem(SIZE_KEY, JSON.stringify({ w: w, h: h }));
       }
@@ -546,10 +546,12 @@ var POKEDEX_MOVES = {"1":{"n":"拍击","t":"一般","c":"物理"},"2":{"n":"空�
   var pos = null;
   var posSaved = false;
   var dragging = false;
+  var resizing = false;
+  var LONG_PRESS_MS = 450;
 
   function clampPos(x, y) {
-    var w = ui.panel.offsetWidth || 360;
-    var h = ui.panel.offsetHeight || 320;
+    var w = ui.frame.offsetWidth || 360;
+    var h = ui.frame.offsetHeight || 320;
     var maxX = Math.max(8, window.innerWidth - w - 8);
     var maxY = Math.max(8, window.innerHeight - h - 8);
     return {
@@ -561,14 +563,14 @@ var POKEDEX_MOVES = {"1":{"n":"拍击","t":"一般","c":"物理"},"2":{"n":"空�
   function applyPos(x, y) {
     var p = clampPos(x, y);
     pos = p;
-    ui.panel.style.left = p.x + 'px';
-    ui.panel.style.top = p.y + 'px';
+    ui.frame.style.left = p.x + 'px';
+    ui.frame.style.top = p.y + 'px';
   }
 
   /** 默认位置：右下角、悬浮按钮上方 */
   function defaultPos() {
-    var w = ui.panel.offsetWidth || 360;
-    var h = ui.panel.offsetHeight || 320;
+    var w = ui.frame.offsetWidth || 360;
+    var h = ui.frame.offsetHeight || 320;
     return clampPos(window.innerWidth - w - 18, window.innerHeight - h - 84);
   }
 
@@ -591,26 +593,24 @@ var POKEDEX_MOVES = {"1":{"n":"拍击","t":"一般","c":"物理"},"2":{"n":"空�
   }
 
   function bindDrag() {
-    var panel = root.getElementById('panel');
+    var frame = ui.frame;
 
-    panel.addEventListener('pointerdown', function (e) {
-      var hd = e.target && e.target.closest ? e.target.closest('.hd') : null;
-      if (!hd) { return; }
-      if (e.target.classList && e.target.classList.contains('x')) { return; }
-      if (e.button !== 0 && e.pointerType === 'mouse') { return; }
-
+    function beginDrag(clientX, clientY) {
       dragging = true;
-      var rect = panel.getBoundingClientRect();
-      var startX = e.clientX;
-      var startY = e.clientY;
+      frame.classList.add('dragging');
+      var rect = frame.getBoundingClientRect();
       var originX = rect.left;
       var originY = rect.top;
+      var startX = clientX;
+      var startY = clientY;
 
       function onMove(ev) {
         applyPos(originX + (ev.clientX - startX), originY + (ev.clientY - startY));
       }
       function onUp() {
         dragging = false;
+        frame.classList.remove('dragging');
+        try { ui.panel.style.userSelect = ''; } catch (err) { /* 忽略 */ }
         savePos();
         posSaved = true;
         window.removeEventListener('pointermove', onMove);
@@ -618,15 +618,105 @@ var POKEDEX_MOVES = {"1":{"n":"拍击","t":"一般","c":"物理"},"2":{"n":"空�
         window.removeEventListener('pointercancel', onUp);
       }
 
-      try { e.target.setPointerCapture && e.target.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
       window.addEventListener('pointercancel', onUp);
-      e.preventDefault();
+    }
+
+    function beginResize(dir, startEvent) {
+      resizing = true;
+      var rect = frame.getBoundingClientRect();
+      var startX = startEvent.clientX;
+      var startY = startEvent.clientY;
+      var MIN_W = 280;
+      var MIN_H = 160;
+
+      function onMove(ev) {
+        var dx = ev.clientX - startX;
+        var dy = ev.clientY - startY;
+        var x = rect.left;
+        var y = rect.top;
+        var w = rect.width;
+        var h = rect.height;
+
+        if (dir.indexOf('e') !== -1) { w = rect.width + dx; }
+        if (dir.indexOf('w') !== -1) { w = rect.width - dx; x = rect.left + dx; }
+        if (dir.indexOf('s') !== -1) { h = rect.height + dy; }
+        if (dir.indexOf('n') !== -1) { h = rect.height - dy; y = rect.top + dy; }
+
+        if (w < MIN_W) { if (dir.indexOf('w') !== -1) { x = rect.left + rect.width - MIN_W; } w = MIN_W; }
+        if (h < MIN_H) { if (dir.indexOf('n') !== -1) { y = rect.top + rect.height - MIN_H; } h = MIN_H; }
+
+        // 限制在视口内
+        if (x < 4) { w += x - 4; x = 4; }
+        if (y < 4) { h += y - 4; y = 4; }
+        if (x + w > window.innerWidth - 4) { w = window.innerWidth - 4 - x; }
+        if (y + h > window.innerHeight - 4) { h = window.innerHeight - 4 - y; }
+
+        frame.style.left = x + 'px';
+        frame.style.top = y + 'px';
+        frame.style.width = Math.max(MIN_W, w) + 'px';
+        frame.style.height = Math.max(MIN_H, h) + 'px';
+        pos = { x: x, y: y };
+      }
+      function onUp() {
+        resizing = false;
+        savePanelSize();
+        savePos();
+        posSaved = true;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+      }
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+      startEvent.preventDefault();
+    }
+
+    frame.addEventListener('pointerdown', function (e) {
+      if (e.button !== 0 && e.pointerType === 'mouse') { return; }
+
+      // 八方向缩放手柄
+      var handle = e.target && e.target.closest ? e.target.closest('.rz') : null;
+      if (handle) {
+        beginResize(handle.getAttribute('data-dir') || '', e);
+        return;
+      }
+
+      // 任意位置长按均可拖动；普通点击（<0.45s）不会触发，按钮/滚动/展开不受影响
+      var startX = e.clientX;
+      var startY = e.clientY;
+      var timer = setTimeout(function () {
+        timer = null;
+        try { ui.panel.style.userSelect = 'none'; } catch (err) { /* 忽略 */ }
+        beginDrag(startX, startY);
+      }, LONG_PRESS_MS);
+
+      function cancelPress() {
+        if (timer) { clearTimeout(timer); timer = null; }
+      }
+      function onMove(ev) {
+        if (timer && (Math.abs(ev.clientX - startX) > 8 || Math.abs(ev.clientY - startY) > 8)) {
+          cancelPress();
+        }
+      }
+      function onUp() {
+        cancelPress();
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+      }
+
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+      // 不 preventDefault：保证按钮点击、滚动、<details> 展开等原有行为不变
     });
 
     // 双击标题栏：回到默认位置
-    panel.addEventListener('dblclick', function (e) {
+    frame.addEventListener('dblclick', function (e) {
       var hd = e.target && e.target.closest ? e.target.closest('.hd') : null;
       if (!hd) { return; }
       var d = defaultPos();
@@ -637,7 +727,7 @@ var POKEDEX_MOVES = {"1":{"n":"拍击","t":"一般","c":"物理"},"2":{"n":"空�
 
     // 窗口尺寸变化时把面板拉回可视区
     window.addEventListener('resize', function () {
-      if (pos && panel.style.display !== 'none') { applyPos(pos.x, pos.y); }
+      if (pos && frame.style.display !== 'none') { applyPos(pos.x, pos.y); }
     });
   }
 
@@ -663,9 +753,23 @@ var POKEDEX_MOVES = {"1":{"n":"拍击","t":"一般","c":"物理"},"2":{"n":"空�
       '.fab.on{background:#2563eb}',
       '.dot{width:8px;height:8px;border-radius:50%;background:#9ca3af}',
       '.dot.on{background:#34d399}',
-      '.panel{position:fixed;pointer-events:auto;width:360px;min-width:280px;min-height:140px;',
-      'max-width:calc(100vw - 40px);max-height:75vh;overflow:auto;resize:both;border-radius:14px;',
+      '.frame{position:fixed;pointer-events:auto;min-width:280px;min-height:160px;',
+      'max-width:calc(100vw - 8px);max-height:calc(100vh - 8px);border-radius:14px;display:none}',
+      '.panel{position:absolute;inset:0;overflow:auto;border-radius:14px;',
       'background:rgba(17,24,39,.97);color:#e5e7eb;box-shadow:0 12px 40px rgba(0,0,0,.5);font-size:12.5px}',
+      '.rz{position:absolute;z-index:5;touch-action:none}',
+      '.rz-n{top:0;left:10px;right:10px;height:6px;cursor:ns-resize}',
+      '.rz-s{bottom:0;left:10px;right:10px;height:6px;cursor:ns-resize}',
+      '.rz-e{right:0;top:10px;bottom:10px;width:6px;cursor:ew-resize}',
+      '.rz-w{left:0;top:10px;bottom:10px;width:6px;cursor:ew-resize}',
+      '.rz-ne{top:0;right:0;width:12px;height:12px;cursor:nesw-resize}',
+      '.rz-nw{top:0;left:0;width:12px;height:12px;cursor:nwse-resize}',
+      '.rz-se{bottom:0;right:0;width:12px;height:12px;cursor:nwse-resize}',
+      '.rz-sw{bottom:0;left:0;width:12px;height:12px;cursor:nesw-resize}',
+      '.drag-hint{position:absolute;top:-26px;left:50%;transform:translateX(-50%);background:#2563eb;color:#fff;',
+      'font-size:11px;padding:2px 9px;border-radius:999px;opacity:0;transition:opacity .15s;pointer-events:none;z-index:6}',
+      '.frame.dragging .drag-hint{opacity:1}',
+      '.frame.dragging .hd{background:#1f2937}',
       '.hd{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #374151;',
       'cursor:move;user-select:none;touch-action:none}',
       '.hd:active{background:#1f2937}',
@@ -696,12 +800,24 @@ var POKEDEX_MOVES = {"1":{"n":"拍击","t":"一般","c":"物理"},"2":{"n":"空�
       'details summary{cursor:pointer;color:#9ca3af;font-size:11.5px}',
       'pre{margin:6px 0 0;max-height:160px;overflow:auto;background:#0b1220;padding:8px;border-radius:8px;font-size:10.5px;color:#94a3b8}',
       '</style>',
-      '<div class="panel" id="panel" style="display:none"></div>',
+      '<div class="frame" id="frame" style="display:none">',
+      '<div class="drag-hint">拖动中…</div>',
+      '<div class="panel" id="panel"></div>',
+      '<div class="rz rz-n" data-dir="n"></div>',
+      '<div class="rz rz-s" data-dir="s"></div>',
+      '<div class="rz rz-e" data-dir="e"></div>',
+      '<div class="rz rz-w" data-dir="w"></div>',
+      '<div class="rz rz-ne" data-dir="ne"></div>',
+      '<div class="rz rz-nw" data-dir="nw"></div>',
+      '<div class="rz rz-se" data-dir="se"></div>',
+      '<div class="rz rz-sw" data-dir="sw"></div>',
+      '</div>',
       '<button class="fab" id="fab"><span class="dot" id="dot"></span><span id="fabText">图鉴桥</span></button>'
     ].join('');
 
     document.documentElement.appendChild(host);
 
+    ui.frame = root.getElementById('frame');
     ui.panel = root.getElementById('panel');
     ui.fab = root.getElementById('fab');
     ui.dot = root.getElementById('dot');
@@ -752,7 +868,7 @@ var POKEDEX_MOVES = {"1":{"n":"拍击","t":"一般","c":"物理"},"2":{"n":"空�
         new ResizeObserver(function () {
           clearTimeout(resizeTimer);
           resizeTimer = setTimeout(savePanelSize, 400);
-        }).observe(ui.panel);
+        }).observe(ui.frame);
       } catch (e) { /* 浏览器不支持时忽略 */ }
     }
 
@@ -765,7 +881,7 @@ var POKEDEX_MOVES = {"1":{"n":"拍击","t":"一般","c":"物理"},"2":{"n":"空�
   function enable() {
     state.enabled = true;
     panelOpen = true;
-    ui.panel.style.display = 'block';
+    ui.frame.style.display = 'block';
     ui.fab.classList.add('on');
     ui.dot.classList.add('on');
     ui.fabText.textContent = '图鉴桥 · 开';
@@ -785,7 +901,7 @@ var POKEDEX_MOVES = {"1":{"n":"拍击","t":"一般","c":"物理"},"2":{"n":"空�
 
   function disable() {
     state.enabled = false;
-    ui.panel.style.display = 'none';
+    ui.frame.style.display = 'none';
     ui.fab.classList.remove('on');
     ui.dot.classList.remove('on');
     ui.fabText.textContent = '图鉴桥';
@@ -892,7 +1008,7 @@ var POKEDEX_MOVES = {"1":{"n":"拍击","t":"一般","c":"物理"},"2":{"n":"空�
     if (!ui.panel) { return; }
 
     // 拖拽中不重建 DOM，避免拖到一半元素被替换
-    if (dragging) { return; }
+    if (dragging || resizing) { return; }
 
     // 保留用户正在看的调试面板展开状态与滚动位置
     var openedDetails = ui.panel.querySelector('details');
