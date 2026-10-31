@@ -115,8 +115,9 @@ cd apps/pokedex
 node tests/run.js
 ```
 
-会校验文件完整性、区域/稀有度枚举、种子数据（条数/去重口径/Boss 已剔除/逐条结构）、
-模板解析逐字段断言、存储层增删改与导入导出、页面元素与脚本引用一致性。
+会校验文件完整性、区域/稀有度枚举、种子数据（条数/稀有度覆盖/逐条结构）、
+模板解析逐字段断言、存储层增删改与导入导出、增量持久化（含旧版迁移与配额溢出）、
+页面元素与脚本引用一致性。
 
 若命令行没有 `node`，用 DSH 自带的：
 
@@ -126,8 +127,12 @@ node tests/run.js
 
 ## 数据存放
 
-- 浏览器 localStorage：键名 `pokedex-lite-v1`
-- 种子数据：`data/pokemon.data.js`（改这里 = 改初始数据）
-- 导出文件：`pokedex-YYYYMMDD.json`
+| 内容 | 位置 | 说明 |
+|---|---|---|
+| 种子数据（1008 条） | `data/pokemon.data.js` | 随文件走，不占浏览器配额 |
+| 用户修改 | localStorage `pokedex-lite-overlay-v1` | 只存改动的记录与删除标记，通常几 KB |
+| 旧版整份存档 | localStorage `pokedex-lite-v1` | 首次加载会自动迁移成覆盖层并删除 |
+| 导出文件 | `pokedex-YYYYMMDD.json` | 手动备份 |
 
-> 清理浏览器数据会丢失未导出的修改，请定期导出备份。
+> localStorage 配额固定约 5 MB 且无法调大；本工具用增量方案规避。详见
+> [docs/使用手册.md](docs/使用手册.md) 第 6.1 节。清理浏览器数据会丢失未导出的修改，请定期导出备份。

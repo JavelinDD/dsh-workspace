@@ -301,6 +301,87 @@ if (fs.existsSync(usPath)) {
     parsed ? ('索引 ' + parsed.length + ' / 种子 ' + seed.pokemons.length) : '解析失败');
 }
 
+/* ---------------- 8. 增量持久化 ---------------- */
+section('8. 增量持久化（localStorage 覆盖层）');
+
+function makeFakeStorage(limitChars) {
+  const map = new Map();
+  function totalSize() {
+    let total = 0;
+    map.forEach(function (v, k) { total += k.length + String(v).length; });
+    return total;
+  }
+  return {
+    getItem: function (k) { return map.has(k) ? map.get(k) : null; },
+    setItem: function (k, v) {
+      const prev = map.get(k);
+      map.set(k, String(v));
+      if (limitChars && totalSize() > limitChars) {
+        if (prev === undefined) { map.delete(k); } else { map.set(k, prev); }
+        const err = new Error('quota exceeded');
+        err.name = 'QuotaExceededError';
+        throw err;
+      }
+    },
+    removeItem: function (k) { map.delete(k); },
+    clear: function () { map.clear(); },
+    key: function (i) { return Array.from(map.keys())[i]; },
+    get length() { return map.size; },
+    dump: function () { return Object.fromEntries(map); }
+  };
+}
+
+const fake = makeFakeStorage(300000);
+global.localStorage = fake;
+store.load(seed);
+check('全量载入（1008 条）', store.count() === seed.pokemons.length);
+check('初始覆盖层很小', store.usageChars() < 200, '实际 ' + store.usageChars());
+
+const hupaRec = store.get('hupa') || store.query({ q: '胡帕' })[0];
+const edited = JSON.parse(JSON.stringify(hupaRec));
+edited.notes = '测试编辑内容';
+store.upsert(edited);
+check('编辑后写入成功', store.lastSaveOk === true, store.lastSaveError);
+check('覆盖层仍很小（只存改动）', store.usageChars() < 3000, '实际 ' + store.usageChars());
+check('覆盖层键已写入', fake.getItem(store.OVERLAY_KEY) !== null);
+
+store.load(seed);
+check('刷新后编辑仍在', (store.get(edited.id) || {}).notes === '测试编辑内容');
+
+store.remove(edited.id);
+store.load(seed);
+check('删除后刷新不复活', !store.get(edited.id));
+check('删除后条数 -1', store.count() === seed.pokemons.length - 1);
+
+store.resetSeed(seed);
+store.load(seed);
+check('恢复种子后条数复原', store.count() === seed.pokemons.length);
+check('恢复种子后编辑消失', (store.get(edited.id) || {}).notes !== '测试编辑内容');
+
+// 旧版整份状态迁移（用不限配额的存储，因为整份状态本身很大）
+const legacyFake = makeFakeStorage(0);
+global.localStorage = legacyFake;
+legacyFake.clear();
+const legacyState = { meta: seed.meta, pokemons: JSON.parse(JSON.stringify(seed.pokemons)) };
+legacyState.pokemons[0].notes = '来自旧版整份存档';
+legacyFake.setItem(store.STORAGE_KEY, JSON.stringify(legacyState));
+store.load(seed);
+check('旧版数据可自动迁移', (store.get(legacyState.pokemons[0].id) || {}).notes === '来自旧版整份存档');
+check('迁移后旧键被清除', legacyFake.getItem(store.STORAGE_KEY) === null);
+check('迁移后写入覆盖层', legacyFake.getItem(store.OVERLAY_KEY) !== null);
+
+// 配额不足时的行为
+const tiny = makeFakeStorage(50);
+global.localStorage = tiny;
+store.load(seed);
+const big = JSON.parse(JSON.stringify(store.get(edited.id) || seed.pokemons[0]));
+big.notes = 'x'.repeat(5000);
+store.upsert(big);
+check('配额不足时明确失败', store.lastSaveOk === false);
+check('失败原因可读（配额）', /配额|Quota/i.test(store.lastSaveError), store.lastSaveError);
+
+global.localStorage = undefined;
+
 /* ---------------- 汇总 ---------------- */
 console.log('\n' + '='.repeat(46));
 console.log('通过 ' + passed + ' 项，失败 ' + failed + ' 项');

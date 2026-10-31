@@ -50,6 +50,10 @@
 
 > 「Boss 限定」指只在普通 Boss 组出现、没有常规野生点位的物种（如尼多后、尼多王）。
 
+**存储与配额**：种子数据随文件走（不占浏览器配额），localStorage 只保存你的修改（增量覆盖层，通常几 KB）。
+localStorage 上限固定约 5 MB 且无法调大；若遇配额提示，先「导出」备份再清理站点数据。
+详见 [apps/pokedex/docs/使用手册.md](apps/pokedex/docs/使用手册.md) 第 6.1 节。
+
 去重与筛选口径、字段字典见 [apps/pokedex/data/schema.md](apps/pokedex/data/schema.md)。
 
 ## 目录结构

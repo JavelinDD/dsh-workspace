@@ -1,7 +1,13 @@
 /**
- * 存储层：查询、增删改、本地持久化（localStorage）、导入导出
+ * 存储层：查询、增删改、本地持久化（增量覆盖层）、导入导出
+ *
+ * 持久化策略（v2）：
+ *   种子数据（1008 条）留在 data/pokemon.data.js，不写 localStorage；
+ *   localStorage 只保存「用户的改动」——{ edits: {id: 记录}, deleted: {id: 1} }。
+ *   这样即使数据规模继续增长，配额也只取决于改动量（通常几 KB）。
+ *
  * 浏览器：window.PokeStore
- * Node：require('./store.js')（无 localStorage，退化为内存态，便于测试）
+ * Node：require('./store.js')（无 localStorage 时退化为内存态，便于测试）
  */
 (function (root, factory) {
   var api = factory();
@@ -10,8 +16,16 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  var STORAGE_KEY = 'pokedex-lite-v1';
-  var state = { meta: {}, pokemons: [] };
+  var LEGACY_KEY = 'pokedex-lite-v1';            // 旧版：整份状态
+  var OVERLAY_KEY = 'pokedex-lite-overlay-v1';   // 新版：仅改动
+  var OVERLAY_VERSION = 1;
+
+  var base = { meta: {}, pokemons: [] };         // 种子数据（只读）
+  var overrides = { v: OVERLAY_VERSION, edits: {}, deleted: {} };
+  var state = { meta: {}, pokemons: [] };        // 合并后的视图
+
+  var lastSaveOk = true;
+  var lastSaveError = '';
 
   function clone(obj) {
     return JSON.parse(JSON.stringify(obj));
@@ -37,48 +51,117 @@
     });
   }
 
-  function setState(next) {
-    state = clone(next || { meta: {}, pokemons: [] });
-    if (!Array.isArray(state.pokemons)) { state.pokemons = []; }
+  /** 用 种子 + 覆盖层 重建内存视图 */
+  function rebuild() {
+    var baseIds = {};
+    base.pokemons.forEach(function (p) { baseIds[p.id] = true; });
+
+    var list = [];
+    base.pokemons.forEach(function (p) {
+      if (overrides.deleted && overrides.deleted[p.id]) { return; }
+      list.push(overrides.edits && overrides.edits[p.id] ? clone(overrides.edits[p.id]) : clone(p));
+    });
+    // 覆盖层里新增、种子里没有的记录
+    Object.keys(overrides.edits || {}).forEach(function (id) {
+      if (!baseIds[id]) { list.push(clone(overrides.edits[id])); }
+    });
+
+    state = { meta: clone(base.meta || {}), pokemons: list };
     normalize(state.pokemons);
     return state;
   }
 
   function init(seed) {
-    return setState(seed);
+    base = clone(seed || { meta: {}, pokemons: [] });
+    if (!Array.isArray(base.pokemons)) { base.pokemons = []; }
+    overrides = { v: OVERLAY_VERSION, edits: {}, deleted: {} };
+    return rebuild();
   }
 
-  /** 优先读取 localStorage，没有则用种子数据；种子版本变化时以新数据为准 */
+  /** 计算「导入数据」相对种子的差异，写进覆盖层 */
+  function diffToOverrides(list) {
+    var edits = {};
+    var deleted = {};
+    var baseMap = {};
+    base.pokemons.forEach(function (p) { baseMap[p.id] = p; });
+
+    var seen = {};
+    (list || []).forEach(function (p) {
+      if (!p || !p.id) { return; }
+      seen[p.id] = true;
+      var original = baseMap[p.id];
+      if (!original || JSON.stringify(original) !== JSON.stringify(p)) {
+        edits[p.id] = clone(p);
+      }
+    });
+    base.pokemons.forEach(function (p) {
+      if (!seen[p.id]) { deleted[p.id] = 1; }
+    });
+    overrides = { v: OVERLAY_VERSION, edits: edits, deleted: deleted };
+  }
+
+  /** 旧版整份状态 → 覆盖层（迁移一次） */
+  function migrateLegacy(oldState) {
+    diffToOverrides(oldState.pokemons || []);
+    save();
+  }
+
   function load(seed) {
+    base = clone(seed || { meta: {}, pokemons: [] });
+    if (!Array.isArray(base.pokemons)) { base.pokemons = []; }
+    overrides = { v: OVERLAY_VERSION, edits: {}, deleted: {} };
+
     var st = storage();
     if (st) {
       try {
-        var raw = st.getItem(STORAGE_KEY);
+        var raw = st.getItem(OVERLAY_KEY);
         if (raw) {
           var parsed = JSON.parse(raw);
-          if (parsed && Array.isArray(parsed.pokemons)) {
-            var seedVersion = seed && seed.meta && seed.meta.version;
-            var storedVersion = parsed.meta && parsed.meta.version;
-            // 版本一致（或种子没标版本）才沿用本地数据，否则用新种子覆盖
-            if (!seedVersion || !storedVersion || storedVersion === seedVersion) {
-              return setState(parsed);
-            }
+          if (parsed && parsed.edits) {
+            overrides = {
+              v: OVERLAY_VERSION,
+              edits: parsed.edits || {},
+              deleted: parsed.deleted || {}
+            };
+          }
+        } else {
+          // 兼容旧版：把整份状态转成覆盖层后删除旧键
+          var legacy = st.getItem(LEGACY_KEY);
+          if (legacy) {
+            try {
+              var oldState = JSON.parse(legacy);
+              if (oldState && Array.isArray(oldState.pokemons)) { migrateLegacy(oldState); }
+            } catch (e) { /* 损坏则忽略 */ }
+            try { st.removeItem(LEGACY_KEY); } catch (e) { /* 忽略 */ }
           }
         }
       } catch (e) {
         // 数据损坏时回退到种子，不阻塞页面
+        overrides = { v: OVERLAY_VERSION, edits: {}, deleted: {} };
       }
     }
-    return setState(seed);
+    return rebuild();
   }
 
+  /** 只写覆盖层（通常几 KB），返回是否成功 */
   function save() {
     var st = storage();
-    if (!st) { return false; }
+    if (!st) {
+      lastSaveOk = false;
+      lastSaveError = '当前环境不支持 localStorage';
+      return false;
+    }
     try {
-      st.setItem(STORAGE_KEY, JSON.stringify(state));
+      st.setItem(OVERLAY_KEY, JSON.stringify(overrides));
+      lastSaveOk = true;
+      lastSaveError = '';
       return true;
     } catch (e) {
+      lastSaveOk = false;
+      var name = e && e.name;
+      lastSaveError = (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED')
+        ? '浏览器本地存储配额已满'
+        : ('写入失败：' + (e && e.message ? e.message : String(e)));
       return false;
     }
   }
@@ -102,10 +185,7 @@
     return best;
   }
 
-  /**
-   * 记录徽章用的稀有度：取所有区域中的「最低档」
-   * （口径：某只最高出现在普通，则它就不算稀有；徽章展示它最容易被遇到时的稀有度）
-   */
+  /** 记录徽章用的稀有度：取所有区域中的「最低档」 */
   function minRarity(p) {
     var cfg = (typeof window !== 'undefined' ? window : globalThis).POKEDEX_CONFIG;
     var low = 0;
@@ -159,12 +239,12 @@
     return list;
   }
 
-  function nextId(base) {
-    var id = base || 'entry';
-    if (!get(id)) { return id; }
+  function nextId(id) {
+    var candidate = id || 'entry';
+    if (!get(candidate)) { return candidate; }
     var n = 2;
-    while (get(id + '-' + n)) { n++; }
-    return id + '-' + n;
+    while (get(candidate + '-' + n)) { n++; }
+    return candidate + '-' + n;
   }
 
   function upsert(pokemon) {
@@ -180,6 +260,9 @@
       state.pokemons.push(rec);
     }
     normalize([rec]);
+
+    overrides.edits[rec.id] = clone(rec);
+    delete overrides.deleted[rec.id];
     save();
     return rec;
   }
@@ -188,27 +271,35 @@
     var before = state.pokemons.length;
     state.pokemons = state.pokemons.filter(function (p) { return p.id !== id; });
     var changed = state.pokemons.length < before;
-    if (changed) { save(); }
+    if (changed) {
+      delete overrides.edits[id];
+      overrides.deleted[id] = 1;
+      save();
+    }
     return changed;
   }
 
   function snapshot() { return clone(state); }
 
   function replace(next) {
-    setState(next);
+    if (next && Array.isArray(next.pokemons)) {
+      diffToOverrides(next.pokemons);
+    }
+    rebuild();
     save();
     return state;
   }
 
   function resetSeed(seed) {
-    setState(seed);
+    if (seed && Array.isArray(seed.pokemons)) { base = clone(seed); }
+    overrides = { v: OVERLAY_VERSION, edits: {}, deleted: {} };
+    rebuild();
     save();
     return state;
   }
 
   function count() { return state.pokemons.length; }
 
-  /** 导出为格式化 JSON 字符串 */
   function exportJson() {
     var out = clone(state);
     out.meta = out.meta || {};
@@ -216,10 +307,6 @@
     return JSON.stringify(out, null, 2);
   }
 
-  /**
-   * 从 JSON 字符串导入
-   * @returns {{ok:boolean, count:number, error:string}}
-   */
   function importJson(text) {
     var parsed;
     try {
@@ -234,18 +321,47 @@
     if (bad.length) {
       return { ok: false, count: 0, error: '有 ' + bad.length + ' 条记录缺少 name 字段。' };
     }
-    setState(parsed);
-    save();
-    return { ok: true, count: state.pokemons.length, error: '' };
+    diffToOverrides(parsed.pokemons);
+    rebuild();
+    var saved = save();
+    return {
+      ok: true,
+      count: state.pokemons.length,
+      error: '',
+      saved: saved,
+      saveError: saved ? '' : lastSaveError
+    };
   }
 
   function clearStorage() {
     var st = storage();
-    if (st) { st.removeItem(STORAGE_KEY); }
+    if (st) {
+      try { st.removeItem(OVERLAY_KEY); } catch (e) { /* 忽略 */ }
+      try { st.removeItem(LEGACY_KEY); } catch (e) { /* 忽略 */ }
+    }
+  }
+
+  /** 覆盖层占用的字符数，便于界面上提示 */
+  function usageChars() {
+    try { return JSON.stringify(overrides).length; } catch (e) { return 0; }
+  }
+
+  function storageAvailable() {
+    var st = storage();
+    if (!st) { return false; }
+    try {
+      var probe = '__pokedex_probe__';
+      st.setItem(probe, '1');
+      st.removeItem(probe);
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   return {
-    STORAGE_KEY: STORAGE_KEY,
+    STORAGE_KEY: LEGACY_KEY,
+    OVERLAY_KEY: OVERLAY_KEY,
     init: init,
     load: load,
     save: save,
@@ -262,6 +378,10 @@
     importJson: importJson,
     clearStorage: clearStorage,
     topRarity: topRarity,
-    minRarity: minRarity
+    minRarity: minRarity,
+    usageChars: usageChars,
+    storageAvailable: storageAvailable,
+    get lastSaveOk() { return lastSaveOk; },
+    get lastSaveError() { return lastSaveError; }
   };
 });

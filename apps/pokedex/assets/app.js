@@ -77,7 +77,7 @@
       .forEach(function (id) { el[id] = $(id); });
 
     store.load(window.POKEDEX_SEED);
-    if (!store.save()) {
+    if (!store.storageAvailable()) {
       setTimeout(function () { toast('当前环境无法使用本地存储，修改只在本次会话有效', true); }, 300);
     }
 
@@ -575,6 +575,16 @@
     if (result.errors.length) { return; }
 
     var saved = store.upsert(record);
+    if (store.lastSaveOk === false) {
+      // 数据已进内存，但没写进浏览器：明确告知，不关闭弹窗，避免用户以为已保存
+      showFormMessages({
+        errors: ['保存失败：' + (store.lastSaveError || '未知原因')
+          + '。请先点「导出」备份 JSON，再清理浏览器存储后重试。'],
+        warnings: []
+      });
+      render();
+      return;
+    }
     state.currentId = saved.id;
     hideModal('modal-form');
     render();
@@ -590,7 +600,11 @@
     state.currentId = null;
     hideModal('modal-form');
     render();
-    toast('已删除「' + p.name + '」');
+    if (store.lastSaveOk === false) {
+      toast('已从当前视图删除，但写入浏览器失败：' + (store.lastSaveError || ''), true);
+    } else {
+      toast('已删除「' + p.name + '」');
+    }
   }
 
   /* ---------------- 进化文本 <-> 数组 ---------------- */
@@ -716,7 +730,11 @@
       }
       state.currentId = null;
       render();
-      toast('已导入 ' + result.count + ' 条记录');
+      if (result.saved === false) {
+        toast('已导入 ' + result.count + ' 条，但写入浏览器失败：' + result.saveError, true);
+      } else {
+        toast('已导入 ' + result.count + ' 条记录');
+      }
     };
     reader.onerror = function () { toast('文件读取失败', true); e.target.value = ''; };
     reader.readAsText(file, 'utf-8');
@@ -727,7 +745,11 @@
     store.resetSeed(window.POKEDEX_SEED);
     state.currentId = null;
     render();
-    toast('已恢复种子数据');
+    if (store.lastSaveOk === false) {
+      toast('已恢复种子数据，但写入浏览器失败：' + (store.lastSaveError || ''), true);
+    } else {
+      toast('已恢复种子数据');
+    }
   }
 
   /* ---------------- 提示 ---------------- */
