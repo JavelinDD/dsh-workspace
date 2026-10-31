@@ -51,6 +51,24 @@
     });
   }
 
+  /**
+   * 紧凑格式还原：种子文件里招式 effect 可能是 meta.effects 的下标（compact-v1），
+   * 在这里统一展开成文本，后续所有逻辑（界面、导出、覆盖层 diff）都按字符串处理。
+   */
+  function hydrateSeed(seed) {
+    var s = clone(seed || { meta: {}, pokemons: [] });
+    var dict = s.meta && Array.isArray(s.meta.effects) ? s.meta.effects : null;
+    if (!dict) { return s; }
+    (s.pokemons || []).forEach(function (p) {
+      (p.moves || []).forEach(function (m) {
+        if (typeof m.effect === 'number') {
+          m.effect = dict[m.effect] == null ? '' : dict[m.effect];
+        }
+      });
+    });
+    return s;
+  }
+
   /** 用 种子 + 覆盖层 重建内存视图 */
   function rebuild() {
     var baseIds = {};
@@ -72,7 +90,7 @@
   }
 
   function init(seed) {
-    base = clone(seed || { meta: {}, pokemons: [] });
+    base = hydrateSeed(seed);
     if (!Array.isArray(base.pokemons)) { base.pokemons = []; }
     overrides = { v: OVERLAY_VERSION, edits: {}, deleted: {} };
     return rebuild();
@@ -107,7 +125,7 @@
   }
 
   function load(seed) {
-    base = clone(seed || { meta: {}, pokemons: [] });
+    base = hydrateSeed(seed);
     if (!Array.isArray(base.pokemons)) { base.pokemons = []; }
     overrides = { v: OVERLAY_VERSION, edits: {}, deleted: {} };
 
@@ -291,7 +309,7 @@
   }
 
   function resetSeed(seed) {
-    if (seed && Array.isArray(seed.pokemons)) { base = clone(seed); }
+    if (seed && Array.isArray(seed.pokemons)) { base = hydrateSeed(seed); }
     overrides = { v: OVERLAY_VERSION, edits: {}, deleted: {} };
     rebuild();
     save();

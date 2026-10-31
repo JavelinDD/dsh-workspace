@@ -456,6 +456,39 @@ check('app.js 已改用 PokeForm 序列化',
   read('assets/app.js').indexOf('window.PokeForm.serializeRows') !== -1);
 check('saveForm 有异常兜底', read('assets/app.js').indexOf('保存时发生异常') !== -1);
 
+/* ---------------- 10. 紧凑格式与效果字典 ---------------- */
+section('10. 紧凑格式与效果字典');
+check('种子含效果字典', Array.isArray(seed.meta.effects) && seed.meta.effects.length > 0,
+  seed.meta && seed.meta.effects ? ('字典 ' + seed.meta.effects.length + ' 条') : '缺失');
+check('种子声明 compact-v1 格式', seed.meta.format === 'compact-v1');
+
+const rawWithMove = seed.pokemons.find(function (p) { return p.moves && p.moves.length; });
+check('文件中招式 effect 是字典下标', typeof rawWithMove.moves[0].effect === 'number');
+check('文件中省略空 aliases 字段', seed.pokemons.some(function (p) { return p.aliases === undefined; }));
+
+store.load(seed);
+const hupaHit = store.query({ q: '胡帕' })[0];
+const hydratedHupa = hupaHit ? store.get(hupaHit.id) : null;
+const hydratedMove = hydratedHupa && hydratedHupa.moves[0];
+const rawHupa = hupaHit ? seed.pokemons.find(function (p) { return p.id === hupaHit.id; }) : null;
+check('加载后 effect 还原为文本',
+  !!hydratedMove && typeof hydratedMove.effect === 'string' && hydratedMove.effect.length > 0);
+check('还原文本与字典一致',
+  hydratedMove.effect === seed.meta.effects[rawHupa.moves[0].effect]);
+check('加载后空 aliases/natures 被补回',
+  Array.isArray(hydratedHupa.aliases) && Array.isArray(hydratedHupa.natures));
+
+const dataSize = fs.statSync(path.join(ROOT, 'data/pokemon.data.js')).size;
+check('数据文件已压缩到 3 MB 以内', dataSize < 3 * 1024 * 1024,
+  (dataSize / 1024 / 1024).toFixed(2) + ' MB');
+check('数据文件仍大于 1.5 MB（防止误清空）', dataSize > 1.5 * 1024 * 1024,
+  (dataSize / 1024 / 1024).toFixed(2) + ' MB');
+
+const roundTrip = JSON.parse(store.exportJson());
+const roundTripHupa = hupaHit ? roundTrip.pokemons.find(function (p) { return p.id === hupaHit.id; }) : null;
+check('导出数据 effect 为文本（可读格式）',
+  !!roundTripHupa && typeof roundTripHupa.moves[0].effect === 'string');
+
 /* ---------------- 汇总 ---------------- */
 console.log('\n' + '='.repeat(46));
 console.log('通过 ' + passed + ' 项，失败 ' + failed + ' 项');
