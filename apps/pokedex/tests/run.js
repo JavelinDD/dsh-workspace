@@ -297,6 +297,48 @@ check('物种编号解析：中文名', core.resolveSpeciesValue(idx, '喷火龙
 check('物种编号解析：实例 ID 拒绝', core.resolveSpeciesValue(idx, 148554607) === null);
 check('物种编号解析：未知返回 null', core.resolveSpeciesValue(idx, 'NotAPokemon') === null);
 
+// 属性克制分析（图鉴桥展示用）
+function profOf(types) {
+  const p = core.defenseProfile(types);
+  const names = function (arr) { return arr.map(function (x) { return x.type; }); };
+  return { weak: names(p.weak), resist: names(p.resist), immune: names(p.immune), raw: p };
+}
+
+// 展示分组：同倍率用「、」，不同倍率用「；」，倍率降序
+const grouped = core.groupByMultiplier([
+  { type: '电', mult: 2 }, { type: '草', mult: 2 }, { type: '冰', mult: 4 }
+]);
+check('倍率分组按降序', grouped.length === 2 && grouped[0].mult === 4 && grouped[1].mult === 2);
+check('同倍率合并为一组', grouped[1].types.join('、') === '电、草');
+check('双属性 4 倍分组', (function () {
+  const g = core.groupByMultiplier(core.defenseProfile(['火', '飞行']).weak);
+  return g[0].mult === 4 && g[0].types.join('、') === '岩石' && g[1].mult === 2;
+})());
+const waterProf = profOf(['水']);
+check('水属性：被电/草克制', waterProf.weak.indexOf('电') !== -1 && waterProf.weak.indexOf('草') !== -1);
+check('水属性：抵抗火/水/冰/钢',
+  ['火', '水', '冰', '钢'].every(function (t) { return waterProf.resist.indexOf(t) !== -1; }));
+check('水属性：无免疫', waterProf.immune.length === 0);
+check('水属性：克制倍率为 2、抵抗为 0.5',
+  waterProf.raw.weak.every(function (x) { return x.mult === 2; }) &&
+  waterProf.raw.resist.every(function (x) { return x.mult === 0.5; }));
+
+const ghostDark = profOf(['幽灵', '恶']);
+check('幽灵/恶：免疫一般/格斗/超能力',
+  ['一般', '格斗', '超能力'].every(function (t) { return ghostDark.immune.indexOf(t) !== -1; }));
+check('幽灵/恶：被妖精克制', ghostDark.weak.indexOf('妖精') !== -1);
+
+const grassPoison = profOf(['草', '毒']);
+check('草/毒：草属性攻击只有 0.25 倍', (function () {
+  const hit = grassPoison.raw.resist.find(function (x) { return x.type === '草'; });
+  return hit && hit.mult === 0.25;
+})());
+check('草/毒：被火/冰/飞行/超能力克制',
+  ['火', '冰', '飞行', '超能力'].every(function (t) { return grassPoison.weak.indexOf(t) !== -1; }));
+
+const steelFairy = profOf(['钢', '妖精']);
+check('钢/妖精：免疫毒与龙', steelFairy.immune.indexOf('毒') !== -1 && steelFairy.immune.indexOf('龙') !== -1);
+
 const speciesNamesMod = require(path.join(ROOT, 'data/species-names.js'));
 const nameMap = speciesNamesMod.names || {};
 check('物种名称表覆盖 ≥ 1000 个编号', Object.keys(nameMap).length >= 1000,
@@ -314,6 +356,11 @@ check('用户脚本已生成', exists('userscript/pokedex-bridge.user.js'));
 if (fs.existsSync(usPath)) {
   const ujs = fs.readFileSync(usPath, 'utf8');
   check('含 Tampermonkey 元数据', ujs.indexOf('// ==UserScript==') === 0);
+  check('含属性克制分析', ujs.indexOf('defenseProfile') !== -1 && ujs.indexOf('克制') !== -1);
+  check('克制属性使用带底色徽章', ujs.indexOf('g.types.map(typeBadge)') !== -1);
+  check('不同倍率分行渲染', ujs.indexOf('×\' + g.mult') !== -1);
+  check('标签只出现一次并缩进排列', ujs.indexOf('flex-direction:column') !== -1);
+  check('已移除 Boss 标签展示', ujs.indexOf('Boss ×') === -1);
   check('匹配 pokerogue.net', ujs.indexOf('@match        https://pokerogue.net/*') !== -1);
   check('document-start 注入', ujs.indexOf('@run-at       document-start') !== -1);
   check('内嵌图鉴索引', ujs.indexOf('var POKEDEX_INDEX =') !== -1);

@@ -159,7 +159,6 @@
       nature: window.PokeCore.natureZh(entry.nature),
       moves: [],
       shiny: !!entry.shiny,
-      boss: entry.boss ? ('Boss ×' + (entry.bossSegments || 1)) : '',
       fromSave: true,
       record: rec
     };
@@ -547,6 +546,30 @@
       + '</div><div class="mv">推荐配招：' + esc(moves || '—') + '</div>';
   }
 
+  function typeEffectHtml(types) {
+    if (!types || !types.length) { return ''; }
+    var prof = window.PokeCore.defenseProfile(types);
+    // 标签只出现一次，不同倍率的属性在右侧缩进成列
+    function block(label, arr, cls, withMult) {
+      var groups = window.PokeCore.groupByMultiplier(arr);
+      if (!groups.length) { return ''; }
+      var rows = groups.map(function (g) {
+        var badges = g.types.map(typeBadge).join(' ');
+        return '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">'
+          + badges
+          + (withMult ? '<span class="muted">×' + g.mult + '</span>' : '')
+          + '</div>';
+      }).join('');
+      return '<div class="mv" style="display:flex;align-items:flex-start;gap:6px">'
+        + '<span class="' + cls + '" style="flex:0 0 34px;white-space:nowrap">' + label + '：</span>'
+        + '<div style="display:flex;flex-direction:column;gap:2px;flex:1">' + rows + '</div>'
+        + '</div>';
+    }
+    return block('克制', prof.weak, 'err', true)
+      + block('抵抗', prof.resist, 'rg', true)
+      + block('无效', prof.immune, 'muted', false);
+  }
+
   function rowHtml(p) {
     var hp = p.maxHp ? (p.hp + '/' + p.maxHp) : (p.hp || '');
     return '<div class="row" style="display:block">'
@@ -554,9 +577,9 @@
       + '<span class="nm">' + esc(p.name) + (p.shiny ? ' ✦' : '') + '</span>'
       + '<span class="lv">Lv.' + esc(p.level) + '</span>'
       + (hp ? '<span class="hp">HP ' + esc(hp) + '</span>' : '')
-      + (p.boss ? '<span class="tag" style="background:#7f1d1d;color:#fecaca">' + esc(p.boss) + '</span>' : '')
       + (p.types || []).map(typeBadge).join('')
       + '</div>'
+      + typeEffectHtml(p.types)
       + (p.ability || p.passive ? '<div class="mv">特性：' + esc(p.ability || '—')
         + (p.passive ? ' ｜ 被动：' + esc(p.passive) : '') + '</div>' : '')
       + (p.nature ? '<div class="mv">性格：' + esc(p.nature) + '</div>' : '')

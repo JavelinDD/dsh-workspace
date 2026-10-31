@@ -99,6 +99,55 @@
     return ['普通', '罕见', '稀有', '超级稀有', '极其稀有', 'Boss'][(rank || 0) - 1] || '';
   }
 
+  // 攻击属性 → 防御属性 的倍率（未列出的为 1 倍）
+  var TYPE_CHART = {
+    '一般': { '岩石': 0.5, '幽灵': 0, '钢': 0.5 },
+    '火': { '火': 0.5, '水': 0.5, '草': 2, '冰': 2, '虫': 2, '岩石': 0.5, '龙': 0.5, '钢': 2 },
+    '水': { '火': 2, '水': 0.5, '草': 0.5, '地面': 2, '岩石': 2, '龙': 0.5 },
+    '草': { '火': 0.5, '水': 2, '草': 0.5, '毒': 0.5, '地面': 2, '飞行': 0.5, '虫': 0.5, '岩石': 2, '龙': 0.5, '钢': 0.5 },
+    '电': { '水': 2, '电': 0.5, '草': 0.5, '地面': 0, '飞行': 2, '龙': 0.5 },
+    '冰': { '火': 0.5, '水': 0.5, '草': 2, '冰': 0.5, '地面': 2, '飞行': 2, '龙': 2, '钢': 0.5 },
+    '格斗': { '一般': 2, '冰': 2, '毒': 0.5, '飞行': 0.5, '超能力': 0.5, '虫': 0.5, '岩石': 2, '幽灵': 0, '恶': 2, '钢': 2, '妖精': 0.5 },
+    '毒': { '草': 2, '毒': 0.5, '地面': 0.5, '岩石': 0.5, '幽灵': 0.5, '钢': 0, '妖精': 2 },
+    '地面': { '火': 2, '电': 2, '草': 0.5, '毒': 2, '飞行': 0, '虫': 0.5, '岩石': 2, '钢': 2 },
+    '飞行': { '电': 0.5, '草': 2, '格斗': 2, '虫': 2, '岩石': 0.5, '钢': 0.5 },
+    '超能力': { '格斗': 2, '毒': 2, '超能力': 0.5, '恶': 0, '钢': 0.5 },
+    '虫': { '火': 0.5, '草': 2, '格斗': 0.5, '毒': 0.5, '飞行': 0.5, '超能力': 2, '幽灵': 0.5, '恶': 2, '钢': 0.5, '妖精': 0.5 },
+    '岩石': { '火': 2, '冰': 2, '格斗': 0.5, '地面': 0.5, '飞行': 2, '虫': 2, '钢': 0.5 },
+    '幽灵': { '一般': 0, '超能力': 2, '幽灵': 2, '恶': 0.5 },
+    '龙': { '龙': 2, '钢': 0.5, '妖精': 0 },
+    '恶': { '格斗': 0.5, '超能力': 2, '幽灵': 2, '恶': 0.5, '妖精': 0.5 },
+    '钢': { '火': 0.5, '水': 0.5, '电': 0.5, '冰': 2, '岩石': 2, '钢': 0.5, '妖精': 2 },
+    '妖精': { '火': 0.5, '格斗': 2, '毒': 0.5, '龙': 2, '恶': 2, '钢': 0.5 }
+  };
+
+  /**
+   * 计算某属性组合的防御面：
+   *   克制（weak）倍率 > 1；抵抗（resist）0 < 倍率 < 1；无效（immune）倍率 = 0
+   */
+  function defenseProfile(types) {
+    var defs = (types || []).filter(Boolean);
+    var weak = [];
+    var resist = [];
+    var immune = [];
+    if (!defs.length) { return { weak: weak, resist: resist, immune: immune }; }
+
+    Object.keys(TYPE_CHART).forEach(function (atk) {
+      var row = TYPE_CHART[atk] || {};
+      var mult = 1;
+      defs.forEach(function (def) {
+        mult *= (row[def] == null ? 1 : row[def]);
+      });
+      if (mult > 1) { weak.push({ type: atk, mult: mult }); }
+      else if (mult === 0) { immune.push({ type: atk, mult: 0 }); }
+      else if (mult < 1) { resist.push({ type: atk, mult: mult }); }
+    });
+
+    weak.sort(function (a, b) { return b.mult - a.mult; });
+    resist.sort(function (a, b) { return a.mult - b.mult; });
+    return { weak: weak, resist: resist, immune: immune };
+  }
+
   /**
    * 解析存档里的物种字段，返回全国图鉴号或 null
    * 兼容：数字（SpeciesId）、数字字符串、物种名（slug/中文名/英文名）
@@ -126,6 +175,25 @@
     return speciesNames[id] || speciesNames[String(id)] || '';
   }
 
+  /**
+   * 按倍率分组（降序），用于「冰 ×4；电、草 ×2」这种展示
+   * 返回 [{ mult, types: [...] }]
+   */
+  function groupByMultiplier(list) {
+    var order = [];
+    var groups = {};
+    (list || []).forEach(function (x) {
+      var key = String(x.mult);
+      if (!groups[key]) {
+        groups[key] = { mult: x.mult, types: [] };
+        order.push(key);
+      }
+      groups[key].types.push(x.type);
+    });
+    return order.map(function (k) { return groups[k]; })
+      .sort(function (a, b) { return b.mult - a.mult; });
+  }
+
   return {
     TYPE_BY_ID: TYPE_BY_ID,
     TYPE_ZH: TYPE_ZH,
@@ -136,6 +204,9 @@
     findRecord: findRecord,
     rarityName: rarityName,
     resolveSpeciesValue: resolveSpeciesValue,
-    speciesName: speciesName
+    speciesName: speciesName,
+    groupByMultiplier: groupByMultiplier,
+    TYPE_CHART: TYPE_CHART,
+    defenseProfile: defenseProfile
   };
 });
