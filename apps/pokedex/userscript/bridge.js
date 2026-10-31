@@ -9,6 +9,9 @@
   window.__POKEDEX_BRIDGE__ = true;
 
   var INDEX = (typeof POKEDEX_INDEX !== 'undefined') ? POKEDEX_INDEX : [];
+  // 直接引用同作用域变量：Tampermonkey 可能把脚本包在函数里，window.POKEDEX_* 会拿不到
+  var SPECIES_NAMES = (typeof POKEDEX_SPECIES_NAMES !== 'undefined') ? POKEDEX_SPECIES_NAMES : {};
+  var MOVE_TABLE = (typeof POKEDEX_MOVES !== 'undefined') ? POKEDEX_MOVES : {};
   var SAVE_KEY = 'x0i2O7WRiANTqPmZ';      // 来自游戏源码 src/constants.ts（官方硬编码常量）
   var STORE_KEY = 'pokedex-bridge-enabled';
   var APP_PATH = 'C:\\Users\\伊谢尔伦\\Desktop\\DSH_Only\\apps\\pokedex\\index.html';
@@ -83,6 +86,26 @@
     return window.PokeCore.findRecord(INDEX, name, dexNo);
   }
 
+  /* ---------------- 招式表（ID / 名称 → 名称 + 属性） ---------------- */
+
+  var moveNameMap = null;
+  function moveInfoByName() {
+    if (!moveNameMap) {
+      moveNameMap = {};
+      var table = MOVE_TABLE;
+      Object.keys(table).forEach(function (id) {
+        var m = table[id];
+        if (m && m.n && !moveNameMap[m.n]) { moveNameMap[m.n] = { name: m.n, type: m.t }; }
+      });
+    }
+    return moveNameMap;
+  }
+
+  function moveInfoById(id) {
+    var m = MOVE_TABLE[id];
+    return m ? { name: m.n, type: m.t } : { name: '招式#' + id, type: '' };
+  }
+
   function scenePokemon(p) {
     var dexNo = safe(function () {
       var s = p.species || {};
@@ -102,7 +125,9 @@
       passive: safe(function () { return p.getPassiveAbility().name; }, ''),
       nature: safe(function () { return window.PokeCore.natureZh(p.getNature()); }, ''),
       moves: safe(function () {
-        return p.getMoveset(true).map(function (m) { return m.getName(); }).filter(Boolean);
+        var byName = moveInfoByName();
+        return p.getMoveset(true).map(function (m) { return m.getName(); }).filter(Boolean)
+          .map(function (n) { return byName[n] || { name: n, type: '' }; });
       }, []),
       shiny: safe(function () { return p.isShiny(); }, false),
       record: findRecord(safe(function () { return p.name; }, ''), dexNo)
@@ -120,7 +145,10 @@
       ability: gi.ability || '',
       passive: gi.isPassiveEnabled ? (gi.passiveAbility || '') : (gi.passiveAbility || '') + '（未启用）',
       nature: window.PokeCore.natureZh(gi.nature || ''),
-      moves: (gi.moveset || []).filter(Boolean),
+      moves: (gi.moveset || []).filter(Boolean).map(function (n) {
+        var hit = moveInfoByName()[n];
+        return hit ? { name: hit.name, type: hit.type } : { name: n, type: '' };
+      }),
       shiny: !!gi.shiny,
       record: findRecord(gi.name, null)
     };
@@ -137,7 +165,7 @@
     }
 
     var rec = species ? findRecord('', species) : null;
-    var fallbackName = species ? window.PokeCore.speciesName(window.POKEDEX_SPECIES_NAMES, species) : '';
+    var fallbackName = species ? window.PokeCore.speciesName(SPECIES_NAMES, species) : '';
     // 物种字段本身就是可读名称（非纯数字）时，即使未收录也直接展示
     var rawName = (typeof raw === 'string' && raw && !/^\d+$/.test(raw)) ? raw : '';
 
@@ -148,6 +176,16 @@
     var passive = '';
     if (rec && rec.p && rec.p.length && entry.passive) { passive = rec.p[0] + '（推测）'; }
 
+    // 当前招式：存档里 moveset 可能是 moveId 数组或 {moveId} 对象数组
+    var savedMoves = [];
+    (entry.moveset || []).forEach(function (m) {
+      var id = typeof m === 'number' ? m
+        : (m && m.moveId != null ? m.moveId
+          : (m && typeof m.id === 'number' ? m.id : null));
+      if (id == null) { return; }
+      savedMoves.push(moveInfoById(Number(id)));
+    });
+
     return {
       name: rec ? rec.n : (fallbackName || rawName || ('未收录 #' + (raw == null ? '?' : raw))),
       level: entry.level || 0,
@@ -157,7 +195,7 @@
       ability: ability,
       passive: passive,
       nature: window.PokeCore.natureZh(entry.nature),
-      moves: [],
+      moves: savedMoves.slice(0, 6),
       shiny: !!entry.shiny,
       fromSave: true,
       record: rec
@@ -534,16 +572,14 @@
     if (!p.record) { return '<div class="mv muted">图鉴未收录（可能是特殊形态）</div>'; }
     var r = p.record;
     if (!r.r) {
-      // 非野生物种（传说/幻兽/宝宝形态）：没有区域稀有度，只显示类型与招式
-      return '<div class="mv muted">非野生物种（无区域稀有度数据）</div>'
-        + (r.m && r.m.length ? '<div class="mv">推荐配招：' + esc(r.m.slice(0, 4).join('、')) + '</div>' : '');
+      // 非野生物种（传说/幻兽/宝宝形态）：没有区域稀有度
+      return '<div class="mv muted">非野生物种（无区域稀有度数据）</div>';
     }
     var rarity = window.PokeCore.rarityName(r.r);
     var regions = (r.g || []).map(function (x) { return x[0] + '·' + x[1]; }).join('、');
-    var moves = (r.m || []).slice(0, 4).join('、');
     return '<div class="mv"><span class="rd">稀有度 ' + esc(rarity) + '</span>'
       + (regions ? ' <span class="rg">' + esc(regions) + '</span>' : '')
-      + '</div><div class="mv">推荐配招：' + esc(moves || '—') + '</div>';
+      + '</div>';
   }
 
   function typeEffectHtml(types) {
@@ -583,9 +619,21 @@
       + (p.ability || p.passive ? '<div class="mv">特性：' + esc(p.ability || '—')
         + (p.passive ? ' ｜ 被动：' + esc(p.passive) : '') + '</div>' : '')
       + (p.nature ? '<div class="mv">性格：' + esc(p.nature) + '</div>' : '')
-      + (p.moves && p.moves.length ? '<div class="mv">招式：' + esc(p.moves.join(' / ')) + '</div>' : '')
+      + movesHtml(p.moves)
       + recordLine(p)
       + '</div>';
+  }
+
+  function movesHtml(moves) {
+    if (!moves || !moves.length) { return ''; }
+    var items = moves.map(function (m) {
+      return '<span style="display:inline-flex;align-items:center;gap:3px">'
+        + (m.type ? typeBadge(m.type) : '')
+        + '<span style="color:#e5e7eb">' + esc(m.name) + '</span>'
+        + '</span>';
+    });
+    return '<div class="mv" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px">'
+      + '<span class="muted">当前招式：</span>' + items.join('') + '</div>';
   }
 
   var lastSignature = '';
@@ -657,6 +705,7 @@
         enemyFields: state.enemyKeys,
         enemySample: state.enemyRaw,
         index: INDEX.length,
+        moveTable: Object.keys(MOVE_TABLE).length,
         lastScan: state.lastScan ? new Date(state.lastScan).toLocaleTimeString() : ''
       }, null, 2))
       + '</pre></details>'

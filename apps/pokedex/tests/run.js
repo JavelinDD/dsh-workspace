@@ -47,6 +47,7 @@ section('1. 文件完整性');
   'data/config.js',
   'data/pokemon.data.js',
   'data/species-names.js',
+  'data/move-table.js',
   'data/schema.md',
   'docs/需求说明.md',
   'docs/使用手册.md',
@@ -54,7 +55,8 @@ section('1. 文件完整性');
   'tools/fetch-biomes.mjs',
   'tools/build-dataset.mjs',
   'tools/emit-data.mjs',
-  'tools/fetch-species-names.mjs'
+  'tools/fetch-species-names.mjs',
+  'tools/fetch-move-table.mjs'
 ].forEach(function (f) {
   check('存在 ' + f, exists(f));
 });
@@ -351,6 +353,15 @@ const missingNameIds = [];
 for (let id = 1; id <= 1025; id++) { if (!nameMap[id]) { missingNameIds.push(id); } }
 check('名称表覆盖 1~1025 全部编号', missingNameIds.length === 0, '缺 ' + missingNameIds.join(','));
 
+// 招式表（当前招式显示用）
+const moveMod = require(path.join(ROOT, 'data/move-table.js'));
+const moveMap = moveMod.moves || {};
+check('招式表条数 ≥ 900', Object.keys(moveMap).length >= 900, '实际 ' + Object.keys(moveMap).length);
+check('招式 1 → 拍击/一般', moveMap[1] && moveMap[1].n === '拍击' && moveMap[1].t === '一般');
+check('招式 100 → 瞬间移动/变化', moveMap[100] && moveMap[100].n === '瞬间移动' && moveMap[100].c === '变化');
+check('招式 451 → 充电光束/电', moveMap[451] && moveMap[451].n === '充电光束' && moveMap[451].t === '电');
+check('招式 851 → 太晶爆发', moveMap[851] && moveMap[851].n.indexOf('太晶') === 0);
+
 const usPath = path.join(ROOT, 'userscript/pokedex-bridge.user.js');
 check('用户脚本已生成', exists('userscript/pokedex-bridge.user.js'));
 if (fs.existsSync(usPath)) {
@@ -365,6 +376,16 @@ if (fs.existsSync(usPath)) {
   check('document-start 注入', ujs.indexOf('@run-at       document-start') !== -1);
   check('内嵌图鉴索引', ujs.indexOf('var POKEDEX_INDEX =') !== -1);
   check('内嵌物种名称表', ujs.indexOf('var POKEDEX_SPECIES_NAMES =') !== -1);
+  check('内嵌招式表', ujs.indexOf('var POKEDEX_MOVES =') !== -1);
+  check('显示当前招式', ujs.indexOf('当前招式') !== -1);
+  check('已移除推荐配招栏', ujs.indexOf('推荐配招') === -1);
+  check('解析存档 moveset', ujs.indexOf('entry.moveset') !== -1);
+  check('招式表使用同作用域引用（兼容沙箱）',
+    ujs.indexOf("typeof POKEDEX_MOVES !== 'undefined'") !== -1 && ujs.indexOf('window.POKEDEX_MOVES') === -1);
+  check('物种名称表使用同作用域引用',
+    ujs.indexOf("typeof POKEDEX_SPECIES_NAMES !== 'undefined'") !== -1 &&
+    ujs.indexOf('window.POKEDEX_SPECIES_NAMES') === -1);
+  check('调试信息含招式表条数', ujs.indexOf('moveTable:') !== -1);
   check('对手名称使用编号解析 + 名称兜底',
     ujs.indexOf('resolveSpeciesValue') !== -1 && ujs.indexOf('POKEDEX_SPECIES_NAMES') !== -1);
   check('调试信息含对手原始字段', ujs.indexOf('enemySample') !== -1);

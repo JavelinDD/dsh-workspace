@@ -48,8 +48,8 @@ const header = [
   '// ==UserScript==',
   '// @name         PokeDex 队伍桥（PokéRogue）',
   '// @namespace    https://github.com/JavelinDD/dsh-workspace',
-  '// @version      0.1.11',
-  '// @description  读取 PokéRogue 我方队伍与对手，对照本地图鉴显示稀有度、区域与推荐配招',
+  '// @version      0.2.1',
+  '// @description  读取 PokéRogue 我方队伍与对手，对照本地图鉴显示属性、克制关系与当前招式',
   '// @author       JavelinDD',
   '// @match        https://pokerogue.net/*',
   '// @match        https://*.pokerogue.net/*',
@@ -73,7 +73,17 @@ if (fs.existsSync(speciesNamesFile)) {
 const namesBlock = '/* 物种编号 → 中文名（' + (speciesNames ? Object.keys(speciesNames).length : 0) + ' 条） */\n'
   + 'var POKEDEX_SPECIES_NAMES = ' + JSON.stringify(speciesNames || {}) + ';\n\n';
 
-const out = header + core + '\n\n' + dataBlock + namesBlock + bridge;
+// 招式 ID → 名称/属性/分类（由 tools/fetch-move-table.mjs 生成）
+let moveTable = null;
+const moveTableFile = path.join(ROOT, 'data/move-table.js');
+if (fs.existsSync(moveTableFile)) {
+  const mod = require(moveTableFile);
+  moveTable = mod && mod.moves ? mod.moves : null;
+}
+const movesBlock = '/* 招式 ID → 名称/属性（' + (moveTable ? Object.keys(moveTable).length : 0) + ' 条） */\n'
+  + 'var POKEDEX_MOVES = ' + JSON.stringify(moveTable || {}) + ';\n\n';
+
+const out = header + core + '\n\n' + dataBlock + namesBlock + movesBlock + bridge;
 const outFile = path.join(ROOT, 'userscript/pokedex-bridge.user.js');
 fs.writeFileSync(outFile, out, 'utf8');
 
