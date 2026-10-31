@@ -94,6 +94,28 @@ async function main() {
     await sleep(600);
   }
 
+  // 少数基础形态在站点上带后缀（normal/altered/land…），语言包键对不上，手工补齐
+  const EXTRA_BY_ID = {
+    386: 'deoxys-normal',
+    487: 'giratina-altered',
+    492: 'shaymin-land',
+    493: 'arceus-normal',
+    716: 'xerneas-neutral',
+    888: 'zacian-hero-of-many-battles',
+    889: 'zamazenta-hero-of-many-battles',
+    1007: 'koraidon-limited-build',
+    1008: 'miraidon-ultimate-mode'
+  };
+  for (const idStr of Object.keys(EXTRA_BY_ID)) {
+    const id = Number(idStr);
+    if (map[id]) { continue; }
+    const html = await fetchPage(EXTRA_BY_ID[idStr]);
+    if (!html) { continue; }
+    const info = parseName(html);
+    if (info.name && (info.dexNo === id || !info.dexNo)) { map[id] = info.name; }
+    await sleep(600);
+  }
+
   console.log('补抓完成：新增编号 ' + fetched + '，404/跳过 ' + skipped);
 
   const ids = Object.keys(map).map(Number).sort(function (a, b) { return a - b; });

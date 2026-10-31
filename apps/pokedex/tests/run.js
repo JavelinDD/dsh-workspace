@@ -292,6 +292,9 @@ check('名称表含 1 → 妙蛙种子', nameMap[1] === '妙蛙种子', String(n
 check('名称表含 150 → 超梦', nameMap[150] === '超梦', String(nameMap[150]));
 check('名称表含 151 → 梦幻', nameMap[151] === '梦幻', String(nameMap[151]));
 check('speciesName 可按编号取名', core.speciesName(nameMap, 150) === '超梦');
+const missingNameIds = [];
+for (let id = 1; id <= 1025; id++) { if (!nameMap[id]) { missingNameIds.push(id); } }
+check('名称表覆盖 1~1025 全部编号', missingNameIds.length === 0, '缺 ' + missingNameIds.join(','));
 
 const usPath = path.join(ROOT, 'userscript/pokedex-bridge.user.js');
 check('用户脚本已生成', exists('userscript/pokedex-bridge.user.js'));
