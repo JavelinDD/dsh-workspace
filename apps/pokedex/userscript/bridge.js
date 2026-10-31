@@ -509,7 +509,7 @@
   }
 
   function recordLine(p) {
-    if (!p.record) { return '<div class="mv muted">图鉴未收录（仍可按游戏数据参考）</div>'; }
+    if (!p.record) { return '<div class="mv muted">图鉴未收录（可能是特殊形态）</div>'; }
     var r = p.record;
     var rarity = window.PokeCore.rarityName(r.r);
     var regions = (r.g || []).map(function (x) { return x[0] + '·' + x[1]; }).join('、');

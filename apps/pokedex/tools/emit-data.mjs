@@ -48,12 +48,12 @@ unique.sort(function (a, b) {
 
 const data = {
   meta: {
-    version: '2.0.0',
+    version: '2.1.0',
     schemaVersion: 1,
     updatedAt: new Date().toISOString().slice(0, 10),
     source: 'pokeroguegame.net（PokeRogue 中文图鉴站，数据源自开源游戏 PokéRogue 官方数据）',
-    generatedBy: 'apps/pokedex/tools/build-dataset.mjs',
-    note: '仅收录「最低稀有度 ≥ 稀有」的物种；同时存在 Boss 与非 Boss 时已剔除 Boss 条目；区域保留站点真实稀有度；性格站点未提供。'
+    generatedBy: 'apps/pokedex/tools/build-dataset.mjs --all',
+    note: '全量收录 34 个生态页出现的全部物种（含普通/罕见/稀有/超级稀有/极其稀有）；同时存在 Boss 与非 Boss 时已剔除 Boss 条目，仅以 Boss 形态出现的映射为基础档并备注 Boss；区域保留站点真实稀有度；性格站点未提供。'
   },
   pokemons: unique
 };

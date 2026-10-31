@@ -61,8 +61,9 @@ section('2. 配置与枚举');
 const cfg = require(path.join(ROOT, 'data/config.js'));
 check('区域数量为 34', cfg.REGIONS.length === 34, '实际 ' + cfg.REGIONS.length);
 check('区域无重复', new Set(cfg.REGIONS).size === cfg.REGIONS.length);
-check('稀有度为 5 档', cfg.RARITIES.length === 5, cfg.RARITIES.join('/'));
-check('稀有度顺序正确', cfg.RARITIES.join(',') === '普通,罕见,稀有,超级稀有,极其稀有');
+check('稀有度档位为 6（含 Boss 限定）', cfg.RARITIES.length === 6, cfg.RARITIES.join('/'));
+check('稀有度顺序正确', cfg.RARITIES.join(',') === '普通,罕见,稀有,超级稀有,极其稀有,Boss');
+check('别名「Boss」→ Boss', cfg.normalizeRarity('Boss') === 'Boss');
 check('别名「非常稀有」→ 超级稀有', cfg.normalizeRarity('非常稀有') === '超级稀有');
 check('别名「常见」→ 普通', cfg.normalizeRarity('常见') === '普通');
 check('未知稀有度返回 null', cfg.normalizeRarity('神仙稀有') === null);
@@ -70,11 +71,11 @@ check('神殿是合法区域', cfg.isRegion('神殿') === true);
 check('属性数量为 18', cfg.TYPES.length === 18, '实际 ' + cfg.TYPES.length);
 check('招式上限为 10', cfg.MAX_MOVES === 10);
 
-/* ---------------- 3. 种子数据（抓取子集） ---------------- */
+/* ---------------- 3. 种子数据（全量） ---------------- */
 section('3. 种子数据');
 const seed = require(path.join(ROOT, 'data/pokemon.data.js'));
 check('种子含 pokemons 数组', Array.isArray(seed.pokemons));
-check('种子条数 ≥ 300', seed.pokemons.length >= 300, '实际 ' + seed.pokemons.length);
+check('种子条数 ≥ 1000（全量）', seed.pokemons.length >= 1000, '实际 ' + seed.pokemons.length);
 check('meta 标注来源', !!(seed.meta && /pokerogue/i.test(seed.meta.source || '')));
 
 let dataErrors = [];
@@ -95,7 +96,6 @@ seed.pokemons.forEach(function (p, i) {
   (p.regions || []).forEach(function (r) {
     if (!cfg.isRegion(r.region)) { dataErrors.push(tag + ' 区域非法 ' + r.region); }
     if (!cfg.normalizeRarity(r.rarity)) { dataErrors.push(tag + ' 稀有度非法 ' + r.rarity); }
-    if (/boss/i.test(r.rarity || '')) { dataErrors.push(tag + ' 稀有度仍含 Boss 字样'); }
   });
   (p.moves || []).forEach(function (m) {
     if (!m.name) { dataErrors.push(tag + ' 招式缺少名称'); }
@@ -108,12 +108,18 @@ seed.pokemons.forEach(function (p, i) {
 });
 check('全部记录结构合法', dataErrors.length === 0, dataErrors.slice(0, 5).join('；'));
 
-const lowRanks = seed.pokemons.map(function (p) {
-  const ranks = p.regions.map(function (r) { return cfg.rarityRank(r.rarity); });
-  return Math.min.apply(null, ranks);
-});
-check('每条记录的最低稀有度 ≥ 稀有（去重口径）', lowRanks.every(function (r) { return r >= 3; }),
-  '低于稀有的条数：' + lowRanks.filter(function (r) { return r < 3; }).length);
+const rankOf = function (p) {
+  const ranks = (p.regions || []).map(function (r) { return cfg.rarityRank(r.rarity); }).filter(Boolean);
+  return ranks.length ? Math.min.apply(null, ranks) : 0;
+};
+const rarePlusCount = seed.pokemons.filter(function (p) {
+  const r = rankOf(p);
+  return r >= 3 && r <= 5;
+}).length;
+check('稀有及以上（3~5 档）仍为 372 条', rarePlusCount === 372, '实际 ' + rarePlusCount);
+check('包含普通档记录（1 档）', seed.pokemons.some(function (p) { return rankOf(p) === 1; }));
+check('包含罕见档记录（2 档）', seed.pokemons.some(function (p) { return rankOf(p) === 2; }));
+check('包含 Boss 限定记录（6 档）', seed.pokemons.some(function (p) { return rankOf(p) === 6; }));
 
 const bulba = seed.pokemons.find(function (p) { return p.name === '妙蛙种子'; });
 check('存在妙蛙种子', !!bulba);

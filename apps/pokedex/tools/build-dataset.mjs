@@ -28,6 +28,7 @@ const TYPES = ['一般', '格斗', '飞行', '毒', '地面', '岩石', '虫', '
 
 const sampleArg = process.argv.find(function (a) { return a.startsWith('--sample='); });
 const SAMPLE = sampleArg ? sampleArg.split('=')[1].split(',').map(function (s) { return s.trim(); }).filter(Boolean) : null;
+const ALL = process.argv.includes('--all');
 
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 function strip(s) {
@@ -45,11 +46,17 @@ function strip(s) {
 
 async function fetchHtml(slug, attempt = 1) {
   const file = path.join(PAGE_CACHE, slug + '.html');
-  if (fs.existsSync(file)) { return fs.readFileSync(file, 'utf8'); }
+  if (fs.existsSync(file)) {
+    const cached = fs.readFileSync(file, 'utf8');
+    // 空响应（0 字节或极短）视为无效缓存，重新抓取
+    if (cached.length > 1000) { return cached; }
+    fs.unlinkSync(file);
+  }
   try {
     const res = await fetch(BASE + '/pokedex/' + slug, { headers: { 'user-agent': UA } });
     if (!res.ok) { throw new Error('HTTP ' + res.status); }
     const html = await res.text();
+    if (html.length <= 1000) { throw new Error('响应过短 ' + html.length); }
     fs.writeFileSync(file, html, 'utf8');
     return html;
   } catch (err) {
@@ -299,7 +306,7 @@ function parsePage(slug, html) {
 
 /* ---------------- 主流程 ---------------- */
 
-function loadKeepList() {
+function loadKeepList(all) {
   const phase1 = JSON.parse(fs.readFileSync(path.join(CACHE, 'phase1.json'), 'utf8'));
   const keep = [];
   phase1.species.forEach(function (s) {
@@ -308,19 +315,21 @@ function loadKeepList() {
     const use = nonBoss.length ? nonBoss : boss;
     if (!use.length) { return; }
 
-    // 只在 Boss 形态出现的物种：把「稀有Boss/超级稀有Boss」映射回基础档，并备注 Boss
+    // 只在 Boss 形态出现的物种：
+    //  · 稀有Boss / 超级稀有Boss → 映射回基础档，备注 Boss
+    //  · 普通 Boss → 记为专门的「Boss」档（没有常规野生点位）
     const mapped = use.map(function (r) {
       if (!BOSS_RARITIES.has(r.rarity)) {
         return { region: r.region, rarity: r.rarity, note: '' };
       }
       const base = r.rarity.replace(/Boss$/, '');
-      if (!base) { return null; } // 纯 Boss 不收录
+      if (!base) { return { region: r.region, rarity: 'Boss', note: 'Boss 限定' }; }
       return { region: r.region, rarity: base, note: 'Boss' };
     }).filter(Boolean);
     if (!mapped.length) { return; }
 
     const min = mapped.reduce(function (a, r) { return Math.min(a, RARITY_OF[r.rarity] || 0); }, 9);
-    if (min < 3) { return; }
+    if (!all && min < 3) { return; }
     keep.push({ slug: s.slug, name: s.name, regions: mapped, minRank: min });
   });
   return keep;
@@ -373,10 +382,10 @@ async function runSample(slugs) {
   }
 }
 
-async function runFull() {
-  const keep = loadKeepList();
+async function runFull(all) {
+  const keep = loadKeepList(all);
   fs.mkdirSync(PAGE_CACHE, { recursive: true });
-  console.log('待抓取：' + keep.length + ' 只，开始…');
+  console.log((all ? '【全量模式】' : '【稀有+模式】') + '待抓取：' + keep.length + ' 只，开始…');
   const records = [];
   let done = 0;
   let failed = [];
@@ -435,5 +444,5 @@ const mode = SAMPLE ? 'sample' : 'full';
 if (mode === 'sample') {
   runSample(SAMPLE).catch(function (e) { console.error('失败：', e.message); process.exitCode = 1; });
 } else {
-  runFull().catch(function (e) { console.error('失败：', e.message); process.exitCode = 1; });
+  runFull(ALL).catch(function (e) { console.error('失败：', e.message); process.exitCode = 1; });
 }

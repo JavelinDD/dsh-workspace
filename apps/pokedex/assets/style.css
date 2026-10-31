@@ -193,6 +193,7 @@ button, input, select { font: inherit; color: inherit; }
 .rarity.r3 { color: var(--rank-3); }
 .rarity.r4 { color: var(--rank-4); }
 .rarity.r5 { color: var(--rank-5); }
+.rarity.r6 { color: #dc2626; background: #fef2f2; border-color: #fecaca; }
 
 .tag {
   display: inline-block;

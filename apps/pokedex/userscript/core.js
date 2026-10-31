@@ -94,9 +94,9 @@
     return null;
   }
 
-  /** 稀有度展示：r 为档位 1~5 */
+  /** 稀有度展示：r 为档位 1~6（6 = Boss 限定） */
   function rarityName(rank) {
-    return ['普通', '罕见', '稀有', '超级稀有', '极其稀有'][(rank || 0) - 1] || '';
+    return ['普通', '罕见', '稀有', '超级稀有', '极其稀有', 'Boss'][(rank || 0) - 1] || '';
   }
 
   return {
