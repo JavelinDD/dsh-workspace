@@ -63,9 +63,10 @@ apps/pokedex/
 ├── data/
 │   ├── config.js                区域、稀有度、属性等配置
 │   ├── pokemon.data.js          种子数据
+│   ├── species-names.js         编号→中文名（队伍桥对手名称兜底）
 │   └── schema.md                字段字典（数据契约）
 ├── userscript/
-│   ├── core.js                  中英文匹配、属性/性格译名
+│   ├── core.js                  中英文匹配、物种编号解析、属性/性格译名
 │   ├── bridge.js                游戏页面板逻辑
 │   ├── pokedex-bridge.user.js   生成的 Tampermonkey 脚本
 │   └── README.md                安装与排错
@@ -73,6 +74,7 @@ apps/pokedex/
 │   ├── fetch-biomes.mjs         抓取生态页
 │   ├── build-dataset.mjs        抓取详情页
 │   ├── emit-data.mjs            生成种子数据
+│   ├── fetch-species-names.mjs  生成编号→中文名表
 │   └── build-userscript.mjs     生成用户脚本
 ├── docs/
 │   ├── 需求说明.md

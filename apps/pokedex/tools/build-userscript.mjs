@@ -48,7 +48,7 @@ const header = [
   '// ==UserScript==',
   '// @name         PokeDex 队伍桥（PokéRogue）',
   '// @namespace    https://github.com/JavelinDD/dsh-workspace',
-  '// @version      0.1.5',
+  '// @version      0.1.6',
   '// @description  读取 PokéRogue 我方队伍与对手，对照本地图鉴显示稀有度、区域与推荐配招',
   '// @author       JavelinDD',
   '// @match        https://pokerogue.net/*',
@@ -63,7 +63,17 @@ const header = [
 const dataBlock = '/* 图鉴索引（由 apps/pokedex/data/pokemon.data.js 生成，共 ' + index.length + ' 条） */\n'
   + 'var POKEDEX_INDEX = ' + JSON.stringify(index) + ';\n\n';
 
-const out = header + core + '\n\n' + dataBlock + bridge;
+// 物种编号 → 中文名（对手名称兜底；由 tools/fetch-species-names.mjs 生成）
+let speciesNames = null;
+const speciesNamesFile = path.join(ROOT, 'data/species-names.js');
+if (fs.existsSync(speciesNamesFile)) {
+  const mod = require(speciesNamesFile);
+  speciesNames = mod && mod.names ? mod.names : null;
+}
+const namesBlock = '/* 物种编号 → 中文名（' + (speciesNames ? Object.keys(speciesNames).length : 0) + ' 条） */\n'
+  + 'var POKEDEX_SPECIES_NAMES = ' + JSON.stringify(speciesNames || {}) + ';\n\n';
+
+const out = header + core + '\n\n' + dataBlock + namesBlock + bridge;
 const outFile = path.join(ROOT, 'userscript/pokedex-bridge.user.js');
 fs.writeFileSync(outFile, out, 'utf8');
 

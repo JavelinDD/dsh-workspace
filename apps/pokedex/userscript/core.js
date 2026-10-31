@@ -99,6 +99,33 @@
     return ['普通', '罕见', '稀有', '超级稀有', '极其稀有', 'Boss'][(rank || 0) - 1] || '';
   }
 
+  /**
+   * 解析存档里的物种字段，返回全国图鉴号或 null
+   * 兼容：数字（SpeciesId）、数字字符串、物种名（slug/中文名/英文名）
+   */
+  function resolveSpeciesValue(index, value) {
+    if (typeof value === 'number' && isFinite(value)) {
+      return (value > 0 && value <= 2000) ? value : null;
+    }
+    if (typeof value === 'string') {
+      var s = value.trim();
+      if (!s) { return null; }
+      if (/^\d+$/.test(s)) {
+        var n = Number(s);
+        return (n > 0 && n <= 2000) ? n : null;
+      }
+      var rec = findRecord(index, s, null);
+      if (rec && typeof rec.d === 'number' && rec.d > 0) { return rec.d; }
+    }
+    return null;
+  }
+
+  /** 编号 → 名称（speciesNames 为 {编号: 名称}） */
+  function speciesName(speciesNames, id) {
+    if (!speciesNames || id == null) { return ''; }
+    return speciesNames[id] || speciesNames[String(id)] || '';
+  }
+
   return {
     TYPE_BY_ID: TYPE_BY_ID,
     TYPE_ZH: TYPE_ZH,
@@ -107,6 +134,8 @@
     typeZh: typeZh,
     natureZh: natureZh,
     findRecord: findRecord,
-    rarityName: rarityName
+    rarityName: rarityName,
+    resolveSpeciesValue: resolveSpeciesValue,
+    speciesName: speciesName
   };
 });

@@ -22,6 +22,7 @@
     playerSource: '',
     enemySource: '',
     enemyKeys: [],
+    enemyRaw: [],
     lastScan: 0,
     error: ''
   };
@@ -126,11 +127,19 @@
   }
 
   function savePokemon(entry) {
-    // PokemonData.id 是实例 ID，物种在 species 字段（全国图鉴号）；species 缺失时才退回 id 猜测
-    var species = (typeof entry.species === 'number' && entry.species > 0)
-      ? entry.species
-      : (typeof entry.id === 'number' && entry.id > 0 && entry.id < 2000 ? entry.id : null);
+    // 存档里物种字段兼容：species（数值 SpeciesId）> speciesId > 数字字符串/名称
+    // 注意 PokemonData.id 是实例 ID，绝不能当物种用
+    var raw = entry && entry.species != null ? entry.species
+      : (entry && entry.speciesId != null ? entry.speciesId : null);
+    var species = resolveSpecies(raw);
+    if (species == null && entry && typeof entry.id === 'number' && entry.id > 0 && entry.id <= 2000) {
+      species = entry.id; // 极老存档兜底：id 落在图鉴号范围内
+    }
+
     var rec = species ? findRecord('', species) : null;
+    var fallbackName = species ? window.PokeCore.speciesName(window.POKEDEX_SPECIES_NAMES, species) : '';
+    // 物种字段本身就是可读名称（非纯数字）时，即使未收录也直接展示
+    var rawName = (typeof raw === 'string' && raw && !/^\d+$/.test(raw)) ? raw : '';
 
     var ability = '';
     if (rec && rec.a && rec.a.length && typeof entry.abilityIndex === 'number') {
@@ -140,7 +149,7 @@
     if (rec && rec.p && rec.p.length && entry.passive) { passive = rec.p[0] + '（推测）'; }
 
     return {
-      name: rec ? rec.n : ('物种 #' + (species == null ? '?' : species)),
+      name: rec ? rec.n : (fallbackName || rawName || ('未收录 #' + (raw == null ? '?' : raw))),
       level: entry.level || 0,
       hp: entry.hp || 0,
       maxHp: Array.isArray(entry.stats) ? (entry.stats[0] || 0) : 0,
@@ -154,6 +163,10 @@
       fromSave: true,
       record: rec
     };
+  }
+
+  function resolveSpecies(raw) {
+    return window.PokeCore.resolveSpeciesValue(INDEX, raw);
   }
 
   function readSave() {
@@ -207,6 +220,16 @@
       state.enemySource = snapshot ? ('存档快照（' + snapshot.key + '）') : '不可用';
       state.enemyKeys = (snapshot && snapshot.data.enemyParty[0])
         ? Object.keys(snapshot.data.enemyParty[0]).slice(0, 24) : [];
+      // 诊断用：保留前两只对手的原始关键字段，便于排查编号异常
+      state.enemyRaw = snapshot ? snapshot.data.enemyParty.slice(0, 2).map(function (e) {
+        return {
+          species: e.species,
+          speciesId: e.speciesId,
+          id: e.id,
+          formIndex: e.formIndex,
+          level: e.level
+        };
+      }) : [];
     } else {
       state.player = [];
       state.enemy = [];
@@ -604,6 +627,7 @@
         playerSource: state.playerSource,
         enemySource: state.enemySource,
         enemyFields: state.enemyKeys,
+        enemySample: state.enemyRaw,
         index: INDEX.length,
         lastScan: state.lastScan ? new Date(state.lastScan).toLocaleTimeString() : ''
       }, null, 2))

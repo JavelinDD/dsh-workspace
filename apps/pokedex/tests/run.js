@@ -46,13 +46,15 @@ section('1. 文件完整性');
   'assets/app.js',
   'data/config.js',
   'data/pokemon.data.js',
+  'data/species-names.js',
   'data/schema.md',
   'docs/需求说明.md',
   'docs/使用手册.md',
   'README.md',
   'tools/fetch-biomes.mjs',
   'tools/build-dataset.mjs',
-  'tools/emit-data.mjs'
+  'tools/emit-data.mjs',
+  'tools/fetch-species-names.mjs'
 ].forEach(function (f) {
   check('存在 ' + f, exists(f));
 });
@@ -274,6 +276,23 @@ check('图鉴号可匹配（6 → 喷火龙）',
   (core.findRecord(idx, '', 6) || {}).n === '喷火龙');
 check('未知名返回 null', core.findRecord(idx, 'NotAPokemon') === null);
 
+// 物种字段解析（对手名称修复的核心）
+check('物种编号解析：数字', core.resolveSpeciesValue(idx, 6) === 6);
+check('物种编号解析：数字字符串', core.resolveSpeciesValue(idx, '25') === 25);
+check('物种编号解析：英文名', core.resolveSpeciesValue(idx, 'Charizard') === 6);
+check('物种编号解析：中文名', core.resolveSpeciesValue(idx, '喷火龙') === 6);
+check('物种编号解析：实例 ID 拒绝', core.resolveSpeciesValue(idx, 148554607) === null);
+check('物种编号解析：未知返回 null', core.resolveSpeciesValue(idx, 'NotAPokemon') === null);
+
+const speciesNamesMod = require(path.join(ROOT, 'data/species-names.js'));
+const nameMap = speciesNamesMod.names || {};
+check('物种名称表覆盖 ≥ 1000 个编号', Object.keys(nameMap).length >= 1000,
+  '实际 ' + Object.keys(nameMap).length);
+check('名称表含 1 → 妙蛙种子', nameMap[1] === '妙蛙种子', String(nameMap[1]));
+check('名称表含 150 → 超梦', nameMap[150] === '超梦', String(nameMap[150]));
+check('名称表含 151 → 梦幻', nameMap[151] === '梦幻', String(nameMap[151]));
+check('speciesName 可按编号取名', core.speciesName(nameMap, 150) === '超梦');
+
 const usPath = path.join(ROOT, 'userscript/pokedex-bridge.user.js');
 check('用户脚本已生成', exists('userscript/pokedex-bridge.user.js'));
 if (fs.existsSync(usPath)) {
@@ -282,6 +301,10 @@ if (fs.existsSync(usPath)) {
   check('匹配 pokerogue.net', ujs.indexOf('@match        https://pokerogue.net/*') !== -1);
   check('document-start 注入', ujs.indexOf('@run-at       document-start') !== -1);
   check('内嵌图鉴索引', ujs.indexOf('var POKEDEX_INDEX =') !== -1);
+  check('内嵌物种名称表', ujs.indexOf('var POKEDEX_SPECIES_NAMES =') !== -1);
+  check('对手名称使用编号解析 + 名称兜底',
+    ujs.indexOf('resolveSpeciesValue') !== -1 && ujs.indexOf('POKEDEX_SPECIES_NAMES') !== -1);
+  check('调试信息含对手原始字段', ujs.indexOf('enemySample') !== -1);
   check('含我方队伍读取', ujs.indexOf('gameInfo') !== -1 && ujs.indexOf('getPlayerParty') !== -1);
   check('含对手读取与降级', ujs.indexOf('getEnemyParty') !== -1 && ujs.indexOf('sessionData') !== -1);
   check('含开关持久化', ujs.indexOf('pokedex-bridge-enabled') !== -1);
