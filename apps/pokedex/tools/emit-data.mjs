@@ -24,6 +24,14 @@ if (!fs.existsSync(recordsFile)) {
 const records = JSON.parse(fs.readFileSync(recordsFile, 'utf8'))
   .filter(function (r) { return r && r.id && r.name; });
 
+// 合并非野生物种（传说/幻兽/宝宝形态等，regions 为空）
+const extraFile = path.join(ROOT, '.cache/extra-records.json');
+if (fs.existsSync(extraFile)) {
+  const extras = JSON.parse(fs.readFileSync(extraFile, 'utf8'));
+  console.log('合并非野生记录：' + extras.length + ' 条');
+  extras.forEach(function (r) { if (r && r.id && r.name) { records.push(r); } });
+}
+
 // id 去重（极少数形态 slug 可能重复）
 const seen = new Set();
 const unique = [];

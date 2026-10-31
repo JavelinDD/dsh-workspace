@@ -534,6 +534,11 @@
   function recordLine(p) {
     if (!p.record) { return '<div class="mv muted">图鉴未收录（可能是特殊形态）</div>'; }
     var r = p.record;
+    if (!r.r) {
+      // 非野生物种（传说/幻兽/宝宝形态）：没有区域稀有度，只显示类型与招式
+      return '<div class="mv muted">非野生物种（无区域稀有度数据）</div>'
+        + (r.m && r.m.length ? '<div class="mv">推荐配招：' + esc(r.m.slice(0, 4).join('、')) + '</div>' : '');
+    }
     var rarity = window.PokeCore.rarityName(r.r);
     var regions = (r.g || []).map(function (x) { return x[0] + '·' + x[1]; }).join('、');
     var moves = (r.m || []).slice(0, 4).join('、');

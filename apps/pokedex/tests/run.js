@@ -78,7 +78,7 @@ check('招式上限为 10', cfg.MAX_MOVES === 10);
 section('3. 种子数据');
 const seed = require(path.join(ROOT, 'data/pokemon.data.js'));
 check('种子含 pokemons 数组', Array.isArray(seed.pokemons));
-check('种子条数 ≥ 1000（全量）', seed.pokemons.length >= 1000, '实际 ' + seed.pokemons.length);
+check('种子条数 ≥ 1080（野生 + 非野生）', seed.pokemons.length >= 1080, '实际 ' + seed.pokemons.length);
 check('meta 标注来源', !!(seed.meta && /pokerogue/i.test(seed.meta.source || '')));
 
 let dataErrors = [];
@@ -95,7 +95,7 @@ seed.pokemons.forEach(function (p, i) {
     if (!cfg.isType(t)) { dataErrors.push(tag + ' 非法属性 ' + t); }
   });
   if ((p.moves || []).length > cfg.MAX_MOVES) { dataErrors.push(tag + ' 招式超过 10 条'); }
-  if (!(p.regions || []).length) { dataErrors.push(tag + ' 缺少区域'); }
+  if (!(p.regions || []).length && p.wild !== false) { dataErrors.push(tag + ' 缺少区域'); }
   (p.regions || []).forEach(function (r) {
     if (!cfg.isRegion(r.region)) { dataErrors.push(tag + ' 区域非法 ' + r.region); }
     if (!cfg.normalizeRarity(r.rarity)) { dataErrors.push(tag + ' 稀有度非法 ' + r.rarity); }
@@ -123,6 +123,19 @@ check('稀有及以上（3~5 档）仍为 372 条', rarePlusCount === 372, '实�
 check('包含普通档记录（1 档）', seed.pokemons.some(function (p) { return rankOf(p) === 1; }));
 check('包含罕见档记录（2 档）', seed.pokemons.some(function (p) { return rankOf(p) === 2; }));
 check('包含 Boss 限定记录（6 档）', seed.pokemons.some(function (p) { return rankOf(p) === 6; }));
+
+// 非野生物种（传说/幻兽/宝宝形态）已并入
+const kyogre = seed.pokemons.find(function (p) { return p.dexNo === 382; });
+check('存在盖欧卡（非野生）', !!kyogre);
+if (kyogre) {
+  check('盖欧卡名称为中文', kyogre.name === '盖欧卡');
+  check('盖欧卡属性为 水', kyogre.types.join('/') === '水');
+  check('盖欧卡标记为非野生', kyogre.wild === false);
+  check('盖欧卡无区域数据', (kyogre.regions || []).length === 0);
+  check('盖欧卡有招式数据', kyogre.moves.length > 0);
+}
+const nonWild = seed.pokemons.filter(function (p) { return p.wild === false; });
+check('非野生记录数量为 74', nonWild.length === 74, '实际 ' + nonWild.length);
 
 const bulba = seed.pokemons.find(function (p) { return p.name === '妙蛙种子'; });
 check('存在妙蛙种子', !!bulba);

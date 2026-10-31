@@ -462,7 +462,7 @@
       types.push(cb.value);
     });
     var name = $('f-name').value.trim();
-    return {
+    var record = {
       id: editingId || parser.slugify(name || 'entry'),
       name: name,
       aliases: $('f-aliases').value.split(/[,，、]/).map(function (s) { return s.trim(); }).filter(Boolean),
@@ -483,6 +483,12 @@
       source: $('f-source').value.trim(),
       updatedAt: today()
     };
+    // 非野生物种（传说/幻兽等）没有区域数据，编辑时保留标记
+    if (editingId) {
+      var existing = store.get(editingId);
+      if (existing && existing.wild === false) { record.wild = false; }
+    }
+    return record;
   }
 
   function validateRecord(p) {
