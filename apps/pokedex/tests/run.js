@@ -407,6 +407,13 @@ if (fs.existsSync(usPath)) {
   try { parsed = m ? JSON.parse(m[1]) : null; } catch (e) { parsed = null; }
   check('索引可解析且与种子条数一致', !!parsed && parsed.length === seed.pokemons.length,
     parsed ? ('索引 ' + parsed.length + ' / 种子 ' + seed.pokemons.length) : '解析失败');
+  if (parsed) {
+    const wyrdeer = parsed.find(function (x) { return x.s === 'wyrdeer'; });
+    check('Boss 限定物种不再被算成 0 档（诡角鹿 r=6）',
+      !!wyrdeer && wyrdeer.r === 6 && wyrdeer.g.some(function (g) { return g[0] === '冰雪森林'; }));
+    check('Boss 档物种数为 53', parsed.filter(function (x) { return x.r === 6; }).length === 53);
+    check('非野生（无区域）物种数为 74', parsed.filter(function (x) { return x.r === 0; }).length === 74);
+  }
 }
 
 /* ---------------- 8. 增量持久化 ---------------- */
