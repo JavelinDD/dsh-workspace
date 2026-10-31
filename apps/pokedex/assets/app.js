@@ -452,47 +452,8 @@
   }
 
   function readRows(containerId, type) {
-    var out = [];
-    Array.prototype.forEach.call($(containerId).querySelectorAll('.row'), function (row) {
-      var name = row.querySelector('.r-name').value.trim();
-      if (!name) { return; }
-      if (type === 'ability') {
-        out.push({ name: name, desc: row.querySelector('.r-desc').value.trim(), hidden: row.querySelector('.r-hidden').checked });
-      } else if (type === 'passive') {
-        out.push({ name: name, desc: row.querySelector('.r-desc').value.trim() });
-      } else if (type === 'nature') {
-        out.push({
-          name: name,
-          delta: row.querySelector('.r-delta').value.trim(),
-          reason: row.querySelector('.r-reason').value.trim()
-        });
-      } else if (type === 'move') {
-        var powerRaw = row.querySelector('.r-power').value.trim();
-        var accRaw = row.querySelector('.r-accuracy').value.trim();
-        var effect = row.querySelector('.r-effect').value.trim();
-        var chanceMatch = effect.match(/(\d+)\s*%/);
-        out.push({
-          name: name,
-          type: row.querySelector('.r-type').value,
-          category: row.querySelector('.r-category').value,
-          power: powerRaw === '' ? null : Number(powerRaw),
-          accuracy: accRaw === '' ? null : (accRaw === '必中' ? '必中' : (isNaN(Number(accRaw)) ? accRaw : Number(accRaw))),
-          priority: Number(row.querySelector('.r-priority').value || 0),
-          effect: effect,
-          chance: chanceMatch ? Number(chanceMatch[1]) : null,
-          note: ''
-        });
-      } else if (type === 'region') {
-        var region = row.querySelector('.r-region').value;
-        if (!region) { return; }
-        out.push({
-          region: region,
-          rarity: row.querySelector('.r-rarity').value,
-          note: row.querySelector('.r-note').value.trim()
-        });
-      }
-    });
-    return out;
+    var rows = $(containerId).querySelectorAll('.row');
+    return window.PokeForm.serializeRows(rows, type);
   }
 
   function readForm() {
@@ -569,26 +530,34 @@
   }
 
   function saveForm() {
-    var record = readForm();
-    var result = validateRecord(record);
-    showFormMessages(result);
-    if (result.errors.length) { return; }
+    try {
+      var record = readForm();
+      var result = validateRecord(record);
+      showFormMessages(result);
+      if (result.errors.length) { return; }
 
-    var saved = store.upsert(record);
-    if (store.lastSaveOk === false) {
-      // 数据已进内存，但没写进浏览器：明确告知，不关闭弹窗，避免用户以为已保存
+      var saved = store.upsert(record);
+      if (store.lastSaveOk === false) {
+        // 数据已进内存，但没写进浏览器：明确告知，不关闭弹窗，避免用户以为已保存
+        showFormMessages({
+          errors: ['保存失败：' + (store.lastSaveError || '未知原因')
+            + '。请先点「导出」备份 JSON，再清理浏览器存储后重试。'],
+          warnings: []
+        });
+        render();
+        return;
+      }
+      state.currentId = saved.id;
+      hideModal('modal-form');
+      render();
+      toast('已保存「' + saved.name + '」');
+    } catch (e) {
+      // 任何意外异常都必须可见，不能再“点了没反应”
       showFormMessages({
-        errors: ['保存失败：' + (store.lastSaveError || '未知原因')
-          + '。请先点「导出」备份 JSON，再清理浏览器存储后重试。'],
+        errors: ['保存时发生异常：' + (e && e.message ? e.message : String(e))],
         warnings: []
       });
-      render();
-      return;
     }
-    state.currentId = saved.id;
-    hideModal('modal-form');
-    render();
-    toast('已保存「' + saved.name + '」');
   }
 
   function deleteRecord() {

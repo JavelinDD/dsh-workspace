@@ -42,6 +42,7 @@ section('1. 文件完整性');
   'assets/style.css',
   'assets/parser.js',
   'assets/store.js',
+  'assets/form-serialize.js',
   'assets/app.js',
   'data/config.js',
   'data/pokemon.data.js',
@@ -232,7 +233,7 @@ const usedIds = Array.from(appJs.matchAll(/\$\('([^']+)'\)/g), function (m) { re
 const missingIds = Array.from(new Set(usedIds)).filter(function (id) { return !htmlIds.has(id); });
 check('页面元素与脚本引用一致', missingIds.length === 0, missingIds.join(', '));
 
-['data/config.js', 'data/pokemon.data.js', 'assets/parser.js', 'assets/store.js', 'assets/app.js']
+['data/config.js', 'data/pokemon.data.js', 'assets/parser.js', 'assets/store.js', 'assets/form-serialize.js', 'assets/app.js']
   .forEach(function (src) {
     check('index.html 引用 ' + src, html.indexOf(src) !== -1);
   });
@@ -381,6 +382,79 @@ check('配额不足时明确失败', store.lastSaveOk === false);
 check('失败原因可读（配额）', /配额|Quota/i.test(store.lastSaveError), store.lastSaveError);
 
 global.localStorage = undefined;
+
+/* ---------------- 9. 表单行序列化（编辑保存回归） ---------------- */
+section('9. 表单行序列化（编辑保存回归）');
+const formSer = require(path.join(ROOT, 'assets/form-serialize.js'));
+
+function fakeRow(map) {
+  return {
+    querySelector: function (sel) {
+      return Object.prototype.hasOwnProperty.call(map, sel) ? map[sel] : null;
+    }
+  };
+}
+
+// 回归重点：区域行没有 .r-name，旧实现会在这里抛 TypeError 导致“点保存没反应”
+const regionRow = fakeRow({
+  '.r-region': { value: '神殿' },
+  '.r-rarity': { value: '超级稀有' },
+  '.r-note': { value: 'Boss' }
+});
+const regionOut = formSer.serializeRow(regionRow, 'region');
+check('区域行可序列化（不依赖 .r-name）',
+  !!regionOut && regionOut.region === '神殿' && regionOut.rarity === '超级稀有' && regionOut.note === 'Boss');
+check('空区域行被跳过', formSer.serializeRow(fakeRow({ '.r-region': { value: '' } }), 'region') === null);
+
+const abilityOut = formSer.serializeRow(fakeRow({
+  '.r-name': { value: '魔术师' }, '.r-desc': { value: '夺取道具' }, '.r-hidden': { checked: true }
+}), 'ability');
+check('特性行序列化', abilityOut.name === '魔术师' && abilityOut.desc === '夺取道具' && abilityOut.hidden === true);
+
+const passiveOut = formSer.serializeRow(fakeRow({
+  '.r-name': { value: '跟风' }, '.r-desc': { value: '对方能力提升时同步' }
+}), 'passive');
+check('被动行序列化', passiveOut.name === '跟风' && passiveOut.desc === '对方能力提升时同步');
+
+const natureOut = formSer.serializeRow(fakeRow({
+  '.r-name': { value: '内敛' }, '.r-delta': { value: '+特攻 -攻击' }, '.r-reason': { value: '特攻手' }
+}), 'nature');
+check('性格行序列化', natureOut.name === '内敛' && natureOut.delta === '+特攻 -攻击' && natureOut.reason === '特攻手');
+
+const moveOut = formSer.serializeRow(fakeRow({
+  '.r-name': { value: '暗影球' }, '.r-type': { value: '幽灵' }, '.r-category': { value: '特殊' },
+  '.r-power': { value: '80' }, '.r-accuracy': { value: '100' }, '.r-priority': { value: '' },
+  '.r-effect': { value: '有20%概率降低目标特防1级' }
+}), 'move');
+check('招式行序列化', moveOut.name === '暗影球' && moveOut.type === '幽灵' && moveOut.category === '特殊');
+check('招式数值解析', moveOut.power === 80 && moveOut.accuracy === 100 && moveOut.priority === 0);
+check('招式效果概率提取', moveOut.chance === 20);
+
+const accAlways = formSer.serializeRow(fakeRow({
+  '.r-name': { value: '异次元洞' }, '.r-type': { value: '超能力' }, '.r-category': { value: '特殊' },
+  '.r-power': { value: '80' }, '.r-accuracy': { value: '必中' }, '.r-priority': { value: '-7' },
+  '.r-effect': { value: '无视守住' }
+}), 'move');
+check('命中「必中」与负优先度', accAlways.accuracy === '必中' && accAlways.priority === -7);
+
+const statusMove = formSer.serializeRow(fakeRow({
+  '.r-name': { value: '诡计' }, '.r-type': { value: '恶' }, '.r-category': { value: '变化' },
+  '.r-power': { value: '' }, '.r-accuracy': { value: '' }, '.r-priority': { value: '' },
+  '.r-effect': { value: '大幅提升特攻2级' }
+}), 'move');
+check('变化招式威力/命中为空', statusMove.power === null && statusMove.accuracy === null);
+
+check('空名称行被跳过', formSer.serializeRow(fakeRow({ '.r-name': { value: '  ' } }), 'move') === null);
+
+const rows = formSer.serializeRows([
+  fakeRow({ '.r-region': { value: '火山' }, '.r-rarity': { value: '稀有' }, '.r-note': { value: '' } }),
+  fakeRow({ '.r-region': { value: '' } })
+], 'region');
+check('serializeRows 过滤空行', rows.length === 1 && rows[0].region === '火山');
+
+check('app.js 已改用 PokeForm 序列化',
+  read('assets/app.js').indexOf('window.PokeForm.serializeRows') !== -1);
+check('saveForm 有异常兜底', read('assets/app.js').indexOf('保存时发生异常') !== -1);
 
 /* ---------------- 汇总 ---------------- */
 console.log('\n' + '='.repeat(46));
