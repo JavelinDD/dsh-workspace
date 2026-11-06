@@ -14,6 +14,14 @@ const ROOT = path.resolve(__dirname, '..');
 const cfg = require(path.join(ROOT, 'data/config.js'));
 const seed = require(path.join(ROOT, 'data/pokemon.data.js'));
 
+// 种族值（构建期从缓存页解析，见 tools/build-base-stats.mjs）
+let baseStats = {};
+const baseStatsFile = path.join(ROOT, 'data/base-stats.js');
+if (fs.existsSync(baseStatsFile)) {
+  const mod = require(baseStatsFile);
+  baseStats = mod && mod.stats ? mod.stats : {};
+}
+
 // 稀有度换算必须包含 Boss 档（否则 Boss 限定物种会被算成 0 档、误显示“非野生物种”）
 const RANK = { '普通': 1, '罕见': 2, '稀有': 3, '超级稀有': 4, '极其稀有': 5, 'Boss': 6 };
 
@@ -36,7 +44,8 @@ const index = seed.pokemons.map(function (p) {
     g: (p.regions || []).map(function (r) { return [r.region, r.rarity]; }),
     a: (p.abilities || []).map(function (x) { return x.name; }).slice(0, 3),
     p: (p.passives || []).map(function (x) { return x.name; }).slice(0, 2),
-    m: (p.moves || []).map(function (m) { return m.name; }).slice(0, 10)
+    m: (p.moves || []).map(function (m) { return m.name; }).slice(0, 10),
+    b: baseStats[p.id] || null
   };
 });
 
@@ -49,7 +58,7 @@ const header = [
   '// ==UserScript==',
   '// @name         PokeDex 队伍桥（PokéRogue）',
   '// @namespace    https://github.com/JavelinDD/dsh-workspace',
-  '// @version      0.2.4',
+  '// @version      0.3.2',
   '// @description  读取 PokéRogue 我方队伍与对手，对照本地图鉴显示属性、克制关系与当前招式',
   '// @author       JavelinDD',
   '// @match        https://pokerogue.net/*',

@@ -48,6 +48,7 @@ section('1. 文件完整性');
   'data/pokemon.data.js',
   'data/species-names.js',
   'data/move-table.js',
+  'data/base-stats.js',
   'data/schema.md',
   'docs/需求说明.md',
   'docs/使用手册.md',
@@ -56,7 +57,8 @@ section('1. 文件完整性');
   'tools/build-dataset.mjs',
   'tools/emit-data.mjs',
   'tools/fetch-species-names.mjs',
-  'tools/fetch-move-table.mjs'
+  'tools/fetch-move-table.mjs',
+  'tools/build-base-stats.mjs'
 ].forEach(function (f) {
   check('存在 ' + f, exists(f));
 });
@@ -362,6 +364,18 @@ check('招式 100 → 瞬间移动/变化', moveMap[100] && moveMap[100].n === '
 check('招式 451 → 充电光束/电', moveMap[451] && moveMap[451].n === '充电光束' && moveMap[451].t === '电');
 check('招式 851 → 太晶爆发', moveMap[851] && moveMap[851].n.indexOf('太晶') === 0);
 
+// 种族值（队伍桥展开详情用）
+const baseStatsMod = require(path.join(ROOT, 'data/base-stats.js'));
+const baseStats = baseStatsMod.stats || {};
+check('种族值覆盖 ≥ 1000 个物种', Object.keys(baseStats).length >= 1000,
+  '实际 ' + Object.keys(baseStats).length);
+check('妙蛙种子种族值合计 318', baseStats.bulbasaur && baseStats.bulbasaur[6] === 318,
+  JSON.stringify(baseStats.bulbasaur));
+check('喷火龙种族值合计 534', baseStats.charizard && baseStats.charizard[6] === 534,
+  JSON.stringify(baseStats.charizard));
+check('烈咬陆鲨种族值合计 600', baseStats.garchomp && baseStats.garchomp[6] === 600,
+  JSON.stringify(baseStats.garchomp));
+
 const usPath = path.join(ROOT, 'userscript/pokedex-bridge.user.js');
 check('用户脚本已生成', exists('userscript/pokedex-bridge.user.js'));
 if (fs.existsSync(usPath)) {
@@ -407,6 +421,13 @@ if (fs.existsSync(usPath)) {
   check('拖动事件齐全（含边界约束与双击复位）',
     ujs.indexOf('pointerdown') !== -1 && ujs.indexOf('pointermove') !== -1 && ujs.indexOf('dblclick') !== -1);
   check('拖拽/缩放时暂停重绘', ujs.indexOf('if (dragging || resizing) { return; }') !== -1);
+  check('详情默认收起、可展开', ujs.indexOf('data-toggle') !== -1 &&
+    ujs.indexOf('expandedRows') !== -1 && ujs.indexOf('.detail{display:none') !== -1);
+  check('仅敌方显示个体值 IV', ujs.indexOf('个体值') !== -1 && ujs.indexOf('entry.ivs') !== -1);
+  check('显示六维实际数值', ujs.indexOf('六维') !== -1 && ujs.indexOf(' stats6:') !== -1);
+  check('六维使用六项中文标签', ujs.indexOf("['HP', '攻击', '防御', '特攻', '特防', '速度']") !== -1);
+  check('展开详情含种族值', ujs.indexOf('种族值') !== -1 && ujs.indexOf('b: baseStats') === -1);
+  check('索引内嵌种族值字段', ujs.indexOf('"b":[') !== -1);
   const m = ujs.match(/var POKEDEX_INDEX = (\[[\s\S]*?\]);\n/);
   let parsed = null;
   try { parsed = m ? JSON.parse(m[1]) : null; } catch (e) { parsed = null; }

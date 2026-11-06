@@ -130,6 +130,9 @@
           .map(function (n) { return byName[n] || { name: n, type: '' }; });
       }, []),
       shiny: safe(function () { return p.isShiny(); }, false),
+      stats6: safe(function () {
+        return [p.getMaxHp(), p.getStat(1), p.getStat(2), p.getStat(3), p.getStat(4), p.getStat(5)];
+      }, null),
       record: findRecord(safe(function () { return p.name; }, ''), dexNo)
     };
   }
@@ -150,6 +153,11 @@
         return hit ? { name: hit.name, type: hit.type } : { name: n, type: '' };
       }),
       shiny: !!gi.shiny,
+      stats6: (function () {
+        var b = gi.baseStats || {};
+        var arr = [gi.maxHP, b.atk, b.def, b.spAtk, b.spDef, b.speed];
+        return arr.every(function (v) { return typeof v === 'number'; }) ? arr : null;
+      })(),
       record: findRecord(gi.name, null)
     };
   }
@@ -196,6 +204,10 @@
       passive: passive,
       nature: window.PokeCore.natureZh(entry.nature),
       moves: savedMoves.slice(0, 6),
+      // 仅敌方：个体值 IV（0~31）
+      ivs: Array.isArray(entry.ivs) && entry.ivs.length >= 6 ? entry.ivs.slice(0, 6) : null,
+      // 六维实际数值（HP/攻击/防御/特攻/特防/速度）
+      stats6: Array.isArray(entry.stats) && entry.stats.length >= 6 ? entry.stats.slice(0, 6) : null,
       shiny: !!entry.shiny,
       fromSave: true,
       record: rec
@@ -547,8 +559,13 @@
       '.sec{padding:10px 12px;border-bottom:1px solid #1f2937}',
       '.sec:last-child{border-bottom:none}',
       '.tt{color:#9ca3af;margin-bottom:6px;font-size:11.5px;letter-spacing:.4px}',
-      '.row{display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px dashed #1f2937}',
+      '.row{display:block;padding:5px 0;border-bottom:1px dashed #1f2937}',
       '.row:last-child{border-bottom:none}',
+      '.sum{display:flex;align-items:center;gap:6px;flex-wrap:wrap}',
+      '.tog{background:none;border:none;color:#9ca3af;cursor:pointer;font-size:12px;padding:0 3px;line-height:1}',
+      '.tog:hover{color:#fff}',
+      '.detail{display:none;margin-top:2px}',
+      '.row.open .detail{display:block}',
       '.nm{font-weight:600;color:#fff;min-width:76px}',
       '.lv{color:#9ca3af}',
       '.hp{color:#fbbf24;font-variant-numeric:tabular-nums}',
@@ -597,6 +614,18 @@
       if (panelOpen) { enable(); } else { disable(); }
       // 关键：点击后立刻移开焦点，否则空格键会再次激活按钮（游戏里空格是常用键）
       try { ui.fab.blur(); } catch (e) { /* 忽略 */ }
+    });
+
+    // 展开/收起单只宝可梦的详情（默认收起）
+    ui.frame.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('[data-toggle]') : null;
+      if (!btn) { return; }
+      var key = btn.getAttribute('data-toggle');
+      var row = btn.closest('.row');
+      var open = !expandedRows[key];
+      expandedRows[key] = open;
+      btn.textContent = open ? '▾' : '▸';
+      if (row) { row.classList.toggle('open', open); }
     });
 
     root.getElementById('panel').addEventListener('click', function (e) {
@@ -722,22 +751,60 @@
       + block('无效', prof.immune, 'muted', false);
   }
 
-  function rowHtml(p) {
+  function rowHtml(p, key) {
     var hp = p.maxHp ? (p.hp + '/' + p.maxHp) : (p.hp || '');
-    return '<div class="row" style="display:block">'
-      + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+    var open = !!expandedRows[key];
+    return '<div class="row' + (open ? ' open' : '') + '" data-key="' + esc(key) + '">'
+      + '<div class="sum">'
+      + '<button type="button" class="tog" data-toggle="' + esc(key) + '" title="展开/收起">'
+      + (open ? '▾' : '▸') + '</button>'
       + '<span class="nm">' + esc(p.name) + (p.shiny ? ' ✦' : '') + '</span>'
       + '<span class="lv">Lv.' + esc(p.level) + '</span>'
       + (hp ? '<span class="hp">HP ' + esc(hp) + '</span>' : '')
       + (p.types || []).map(typeBadge).join('')
       + '</div>'
+      + '<div class="detail">'
       + typeEffectHtml(p.types)
+      + baseStatsHtml(p)
+      + ivLineHtml(p)
+      + statsLineHtml(p)
       + (p.ability || p.passive ? '<div class="mv">特性：' + esc(p.ability || '—')
         + (p.passive ? ' ｜ 被动：' + esc(p.passive) : '') + '</div>' : '')
       + (p.nature ? '<div class="mv">性格：' + esc(p.nature) + '</div>' : '')
       + movesHtml(p.moves)
       + recordLine(p)
+      + '</div>'
       + '</div>';
+  }
+
+  function ivLineHtml(p) {
+    if (!p.ivs || p.ivs.length < 6) { return ''; }
+    var labels = ['HP', '攻击', '防御', '特攻', '特防', '速度'];
+    var text = p.ivs.slice(0, 6).map(function (v, i) {
+      return labels[i] + ' ' + v;
+    }).join(' / ');
+    return '<div class="mv"><span class="rg">个体值：</span>' + text + '</div>';
+  }
+
+  function statsLineHtml(p) {
+    if (!p.stats6 || p.stats6.length < 6) { return ''; }
+    var labels = ['HP', '攻击', '防御', '特攻', '特防', '速度'];
+    var text = p.stats6.slice(0, 6).map(function (v, i) {
+      return labels[i] + ' ' + v;
+    }).join(' / ');
+    return '<div class="mv"><span class="rd">六维：</span>' + text + '</div>';
+  }
+
+  function baseStatsHtml(p) {
+    var b = p.record && p.record.b;
+    if (!b || b.length < 6) { return ''; }
+    var labels = ['HP', '攻击', '防御', '特攻', '特防', '速度'];
+    var text = b.slice(0, 6).map(function (v, i) {
+      return labels[i] + ' ' + v;
+    }).join(' / ');
+    var total = b[6] != null ? b[6] : b.slice(0, 6).reduce(function (a, c) { return a + c; }, 0);
+    return '<div class="mv"><span class="warn">种族值：</span>' + text
+      + '（合计 ' + total + ' · 基础形态）</div>';
   }
 
   function movesHtml(moves) {
@@ -754,14 +821,15 @@
 
   var lastSignature = '';
   var debugOpen = false;
+  var expandedRows = {};
 
   function signatureOf() {
     return JSON.stringify({
       p: state.player.map(function (p) {
-        return [p.name, p.level, p.hp, p.maxHp, (p.moves || []).join(','), p.ability, p.nature, p.types.join(',')];
+        return [p.name, p.level, p.hp, p.maxHp, (p.moves || []).join(','), p.ability, p.nature, p.types.join(','), (p.stats6 || []).join(',')];
       }),
       e: state.enemy.map(function (p) {
-        return [p.name, p.level, p.hp, p.maxHp, p.boss || ''];
+        return [p.name, p.level, p.hp, p.maxHp, p.boss || '', (p.ivs || []).join(','), (p.stats6 || []).join(',')];
       }),
       ps: state.playerSource,
       es: state.enemySource,
@@ -797,8 +865,8 @@
       + (state.error ? '<div class="err">' + esc(state.error) + '</div>' : '')
       + '</div>';
 
-    var playerHtml = state.player.map(rowHtml).join('') || '<div class="muted">暂无数据</div>';
-    var enemyHtml = state.enemy.map(rowHtml).join('') || '<div class="muted">暂无数据（非战斗或存档未更新）</div>';
+    var playerHtml = state.player.map(function (p, i) { return rowHtml(p, 'p' + i); }).join('') || '<div class="muted">暂无数据</div>';
+    var enemyHtml = state.enemy.map(function (p, i) { return rowHtml(p, 'e' + i); }).join('') || '<div class="muted">暂无数据（非战斗或存档未更新）</div>';
     var enemyNote = state.enemySource === '实时（游戏对象）' ? ''
       : '<div class="muted" style="margin-top:4px">对手来自存档快照：招式与部分细节不可用；进入战斗后点「刷新」。</div>';
 
